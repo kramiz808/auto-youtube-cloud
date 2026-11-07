@@ -1,0 +1,7 @@
+token.json
+client_secret.json
+gemini_key.txt
+work/
+output/*.mp4
+today.json
+__pycache__/
