@@ -1,5 +1,4 @@
 """Hindi dub track: Gemini TTS per subtitle line, slot-fitted, cached in assets/dub."""
-import asyncio
 import base64
 import json
 import time
@@ -12,10 +11,12 @@ from pipeline import FFMPEG, ROOT, WORK, media_duration, run
 MODEL = "gemini-2.5-flash-preview-tts"
 DEFAULT_VOICE = "Kore"
 DUB_DIR = ROOT / "assets" / "dub"
-EDGE_VOICE = {"Kore": "hi-IN-SwaraNeural", "Charon": "hi-IN-MadhurNeural"}
-EDGE_RATE = "+4%"
 STYLE = ("Say this line like a Hindi film dubbing artist: warm, emotional, cinematic, "
          "natural, never robotic. Say only the line:")
+
+
+class VoiceUnavailable(RuntimeError):
+    pass
 
 
 def _key():
@@ -51,11 +52,6 @@ def gemini_line(text, voice_name, out):
     raise RuntimeError("gemini tts: no audio in response")
 
 
-async def _edge_save(text, voice, path):
-    import edge_tts
-    await edge_tts.Communicate(text, voice, rate=EDGE_RATE).save(str(path))
-
-
 def line_audio(scene, k, sub):
     out = DUB_DIR / f"{Path(scene['file']).stem}_{k}.mp3"
     if out.exists() and out.stat().st_size > 1000:
@@ -68,11 +64,9 @@ def line_audio(scene, k, sub):
         except Exception as exc:
             print("GEMINI TTS retry", attempt + 1, exc)
             if attempt == 3:
-                print("GEMINI TTS fallback: edge-tts")
-                asyncio.run(_edge_save(sub["text"], EDGE_VOICE.get(voice, EDGE_VOICE[DEFAULT_VOICE]), out))
-                return out
+                raise VoiceUnavailable(f"voice quota/network: {sub['text']}")
             time.sleep(25 * (attempt + 1))
-    return out
+    raise VoiceUnavailable(sub["text"])
 
 
 def make_dub(scene, dur):

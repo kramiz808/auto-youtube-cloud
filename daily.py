@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pipeline
 import reel
+import voice
 
 ROOT = Path(__file__).resolve().parent
 GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
@@ -53,7 +54,12 @@ def main():
         json.dumps({**data, "hook": hook, "file": scene["file"]}, ensure_ascii=False, indent=2),
         encoding="utf-8")
 
-    video = reel.build_scene(scene, hook, slug)
+    try:
+        video = reel.build_scene(scene, hook, slug)
+    except voice.VoiceUnavailable as exc:
+        print(f"SKIP: Hindi voice cache incomplete aur Gemini quota khatam ({exc}). "
+              f"State advance nahi hua — agla run retry karega.", file=sys.stderr)
+        sys.exit(0)
     print(f"VIDEO: {video}")
     vid = pipeline.upload(video, data)
 
