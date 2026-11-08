@@ -15,6 +15,7 @@ from pipeline import FFMPEG, OUT, WORK, run, mp3_duration
 ROOT = Path(__file__).resolve().parent
 CLIPS = sorted((ROOT / "assets" / "clips").glob("movie_*.mp4"))
 MUSIC = ROOT / "assets" / "music" / "epic.mp3"
+SOFT_MUSIC = ROOT / "assets" / "music" / "soft.mp3"
 FONT_FILE = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
 W, H = 1080, 1920
 STRIP_W, STRIP_H = 1080, 608
@@ -76,6 +77,14 @@ def scene_voice(text, path):
 
 def _clean(s):
     return re.sub(r"[^ -~ऀ-ॿ।॥]", "", s)
+
+
+def pick_music(data):
+    text = (data.get("topic", "") + " " + data.get("title", "") + " " + data.get("hook", "")).lower()
+    if any(k in text for k in ("maa", "baap", "dil", "dard", "akela", "aansu", "garibi", "haar", "parivar",
+                               "माँ", "मां", "बाप", "दिल", "दर्द", "अकेला", "आँसू", "गरीबी", "हार", "परिवार")):
+        return SOFT_MUSIC
+    return MUSIC
 
 
 def build_video(data):
@@ -176,10 +185,10 @@ def build_video(data):
     inputs = [FFMPEG, "-y", "-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r=30:d={total:.2f}"]
     for s in segs:
         inputs += ["-i", s]
-    inputs += ["-i", voice, "-i", MUSIC]
+    inputs += ["-i", voice, "-i", pick_music(data)]
     run(inputs + ["-filter_complex",
          chain + f"[0:v]{cur}{vf}[v];[{n+1}:a]apad=pad_dur=0.6[voc];"
-         f"[{n+2}:a]atrim=0:{total:.2f},volume=0.22,afade=t=in:st=0:d=1.5,afade=t=out:st={total-2.5:.2f}:d=2.5[m];"
+         f"[{n+2}:a]atrim=0:{total:.2f},volume=0.30,afade=t=in:st=0:d=1.5,afade=t=out:st={total-2.5:.2f}:d=2.5[m];"
          f"[voc][m]amix=inputs=2:duration=longest:dropout_transition=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]",
          "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "slow", "-crf", "18",
          "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest", "-pix_fmt", "yuv420p", out], cwd=WORK)

@@ -97,6 +97,7 @@ def main():
         data = fallback_script(idx)
 
     data["slug"] = f"{today}-{idx:02d}"
+    data["topic"] = topic
     data.setdefault("privacy", "public")
     (ROOT / "today.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
