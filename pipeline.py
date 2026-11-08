@@ -25,6 +25,10 @@ def run(cmd, cwd=None):
     return r.stdout
 
 
+class UploadLimitReached(RuntimeError):
+    pass
+
+
 def media_duration(path):
     out = run([FFPROBE, "-v", "error", "-show_entries", "format=duration",
                "-of", "default=noprint_wrappers=1:nokey=1", path])
@@ -70,7 +74,12 @@ def upload(video_path, data):
     req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     resp = None
     while resp is None:
-        status, resp = req.next_chunk(num_retries=3)
+        try:
+            status, resp = req.next_chunk(num_retries=3)
+        except Exception as exc:
+            if "uploadLimitExceeded" in str(exc):
+                raise UploadLimitReached(str(exc)[:120])
+            raise
         if status:
             print(f"upload {int(status.progress() * 100)}%")
     print(f"UPLOADED: https://youtu.be/{resp['id']}")

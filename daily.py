@@ -63,7 +63,12 @@ def main():
               f"State advance nahi hua — agla run retry karega.", file=sys.stderr)
         sys.exit(0)
     print(f"VIDEO: {video}")
-    vid = pipeline.upload(video, data)
+    try:
+        vid = pipeline.upload(video, data)
+    except pipeline.UploadLimitReached:
+        print("SKIP: YouTube ka daily upload limit full hai. State advance nahi hua — "
+              "agla run retry karega.", file=sys.stderr)
+        sys.exit(0)
 
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
         f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
