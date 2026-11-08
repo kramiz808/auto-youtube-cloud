@@ -24,7 +24,9 @@ def gemini_script(topic, api_key):
         "seedha 'tum' kehkar baat karo, emotional aur jazbaati. Pehla scene strong hook (chaunkane wali baat ya sawaal), "
         "beech mein struggle se rise/comeback ka safar, aakhri scene mein powerful punch + subscribe CTA. "
         "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power, never give up. "
-        "Simple bolchaal ki Hindi, original baat, koi jhootha claim nahi."
+        "Simple bolchaal ki Hindi, original baat, koi jhootha claim nahi. "
+        "BAHUT ZAROORI: title, hook aur har scene ka text SIRF Devanagari lipi mein ho (जैसे: 'तुम उठोगे नहीं तो कोई और उठ जाएगा'). "
+        "Roman/Hinglish (Latin letters) bilkul mana hai."
     )
     body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
                        "generationConfig": {"temperature": 0.9, "responseMimeType": "application/json"}}).encode()
@@ -38,6 +40,9 @@ def gemini_script(topic, api_key):
             text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
             data = json.loads(text)
             if data.get("scenes") and data.get("title"):
+                joined = data["title"] + data.get("hook", "") + " ".join(s.get("text", "") for s in data["scenes"])
+                if not re.search(r"[ऀ-ॿ]", joined):
+                    raise ValueError("script not in Devanagari")
                 print(f"script: Gemini ({model})")
                 return data
         except Exception as e:

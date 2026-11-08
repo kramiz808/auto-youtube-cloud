@@ -2,7 +2,7 @@ name: Daily AI Employee
 
 on:
   schedule:
-    - cron: '30 3 * * *'
+    - cron: '30 13 * * *'
   workflow_dispatch:
 
 permissions:

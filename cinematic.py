@@ -10,11 +10,12 @@ import wave
 from pathlib import Path
 
 import pipeline
-from pipeline import FFMPEG, FONT, OUT, WORK, run, mp3_duration
+from pipeline import FFMPEG, OUT, WORK, run, mp3_duration
 
 ROOT = Path(__file__).resolve().parent
 CLIPS = sorted((ROOT / "assets" / "clips").glob("*.mp4"))
 MUSIC = ROOT / "assets" / "music" / "epic.mp3"
+FONT_FILE = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
 W, H = 1080, 1920
 STRIP_W, STRIP_H = 1080, 608
 STRIP_Y = 600
@@ -40,6 +41,9 @@ def _gemini_tts(text, path):
                 resp = json.loads(r.read())
             break
         except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="ignore") if e.code == 429 else ""
+            if e.code == 429 and "per day" in detail.lower():
+                raise RuntimeError("daily TTS quota exhausted")
             if e.code in (429, 500, 503) and attempt < 3:
                 wait = 25 * (attempt + 1)
                 print(f"gemini-tts {e.code}, retry {attempt+1} in {wait}s")
@@ -66,14 +70,6 @@ def scene_voice(text, path):
     tmp = path.with_suffix(".mp3")
     pipeline.make_voice(text, tmp)
     run([FFMPEG, "-y", "-i", tmp, "-ar", "24000", "-ac", "1", path])
-
-
-def _ass_time(s):
-    ms = int(round(s * 1000))
-    h, rem = divmod(ms, 3600000)
-    m, rem = divmod(ms, 60000)
-    sec, milli = divmod(rem, 1000)
-    return f"{h}:{m:02d}:{sec:02d}.{milli//10:02d}"
 
 
 def build_video(data):
@@ -106,19 +102,24 @@ def build_video(data):
     strip = WORK / "cstrip.mp4"
     run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", sl, "-c", "copy", strip])
 
-    # subtitles (ASS) bottom
-    ass = WORK / "csubs.ass"
-    header = (f"[Script Info]\nPlayResX: {W}\nPlayResY: {H}\n\n"
-              f"[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, "
-              f"Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
-              f"Style: Sub,{FONT},54,&H00FFFFFF,&H00000000,&H80000000,-1,0,1,3,0,2,60,60,560\n\n"
-              f"[Events]\nFormat: Layer, Start, End, Style, Text\n")
-    lines, t = [], 0.0
-    for sc, dur in zip(scenes, durations):
-        txt = sc["text"].replace("\n", " ")
-        lines.append(f"Dialogue: 0,{_ass_time(t)},{_ass_time(t+dur-0.15)},Sub,{txt}")
+    # subtitles: per-scene drawtext (bundled font, no fontconfig dependency)
+    sub_filters = []
+    t = 0.0
+    for i, (sc, dur) in enumerate(zip(scenes, durations)):
+        wrapped, cur = [], ""
+        for word in sc["text"].replace("\n", " ").split():
+            if len(cur) + len(word) + 1 > 32:
+                wrapped.append(cur); cur = word
+            else:
+                cur = (cur + " " + word).strip()
+        if cur:
+            wrapped.append(cur)
+        (WORK / ("csub_%02d.txt" % i)).write_text("\n".join(wrapped[:3]), encoding="utf-8")
+        sub_filters.append(
+            f"drawtext=fontfile=cfont.ttf:textfile=csub_{i:02d}.txt:fontcolor=white:fontsize=54:"
+            f"line_spacing=10:x=(w-text_w)/2:y=1250:borderw=3:bordercolor=black:"
+            f"enable='between(t,{t:.2f},{t+dur-0.15:.2f})'")
         t += dur
-    ass.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
     hook = (data.get("hook") or data["title"]).replace("#shorts", "").strip()
     hook_lines = []
@@ -135,33 +136,19 @@ def build_video(data):
     hook_file.write_text(hook_text, encoding="utf-8")
 
     import shutil
-    shutil.copy(_font_path(), WORK / "cfont.ttf")
+    shutil.copy(FONT_FILE, WORK / "cfont.ttf")
     out = OUT / f"{data.get('slug', 'video')}.mp4"
     vf = (f"overlay=0:{STRIP_Y},"
           f"drawtext=fontfile=cfont.ttf:textfile=chook.txt:fontcolor=white:fontsize=62:"
           f"line_spacing=14:x=(w-text_w)/2:y=210:borderw=3:bordercolor=black,"
           f"drawtext=fontfile=cfont.ttf:text='| KALEEM ASAGAR |':fontcolor=0xAAAAAA:fontsize=30:"
           f"x=(w-text_w)/2:y=1760,"
-          f"ass=csubs.ass")
+          + ",".join(sub_filters))
     run([FFMPEG, "-y", "-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r=30:d={total:.2f}",
          "-i", strip, "-i", voice, "-i", MUSIC,
-         "-filter_complex", f"[0:v][1:v]{vf}[v];[3:a]atrim=0:{total:.2f},volume=0.22[m];[2:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
-         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "fast", "-crf", "21",
-         "-c:a", "aac", "-b:a", "128k", "-shortest", "-pix_fmt", "yuv420p", out], cwd=WORK)
+         "-filter_complex", f"[0:v][1:v]{vf}[v];[2:a]apad=pad_dur=0.6[voc];"
+         f"[3:a]atrim=0:{total:.2f},volume=0.22,afade=t=in:st=0:d=1.5,afade=t=out:st={total-2.5:.2f}:d=2.5[m];"
+         f"[voc][m]amix=inputs=2:duration=longest:dropout_transition=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]",
+         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest", "-pix_fmt", "yuv420p", out], cwd=WORK)
     return out
-
-
-def _font_path():
-    import platform
-    import subprocess
-    if platform.system() == "Windows":
-        p = Path("C:/Windows/Fonts/Nirmala.ttf")
-        return str(p) if p.exists() else "C:/Windows/Fonts/arial.ttf"
-    try:
-        out = subprocess.run(["fc-match", "-f", "%{file}", "Noto Sans Devanagari"],
-                             capture_output=True, text=True).stdout.strip()
-        if out:
-            return out
-    except Exception:
-        pass
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
