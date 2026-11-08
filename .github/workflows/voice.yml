@@ -1,0 +1,44 @@
+name: Hindi voice cache
+
+on:
+  schedule:
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Install Python deps
+        run: pip install -q -r requirements.txt
+
+      - name: Fill missing Hindi lines
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python fill_voice.py
+
+      - name: Commit new voice lines
+        run: |
+          git config user.name "ai-employee"
+          git config user.email "actions@github.com"
+          git add assets/dub
+          if git diff --cached --quiet; then
+            echo "no new lines"
+            exit 0
+          fi
+          git commit -m "cache hindi voice $(date -u +%F)"
+          git pull --rebase origin main
+          git push
