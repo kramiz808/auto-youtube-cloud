@@ -5,63 +5,11 @@ import sys
 import urllib.request
 from pathlib import Path
 
-import cinematic
 import pipeline
+import reel
 
 ROOT = Path(__file__).resolve().parent
 GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
-
-
-def gemini_script(topic, api_key):
-    prompt = (
-        f'Topic: "{topic}" | Aaj ki date: {datetime.date.today().isoformat()}\n'
-        "Likho ek 55-60 second YouTube Shorts motivational DIALOGUE Devanagari Hindi mein — do cartoon movie "
-        "characters ke beech baatcheet. SIRF JSON return karo, koi aur text nahi:\n"
-        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "hook": "top-screen bold text <=55 chars, trending reel jaisa scroll-roking sawaal ya ulti baat",'
-        ' "description": "2 lines Hindi + motivational keywords",'
-        ' "tags": ["motivation", "hindi", "mindset", "success", "4-6 relevant tags"],'
-        ' "scenes": [{"speaker": "proog", "text": "us character ki line"}]}\n'
-        "Characters: proog = budha, bhaari, dheemi lekin bahut gehri aawaz wala ustaad; "
-        "emo = jawan, tez, gusse aur bhookh wala ladka. Dono ki lines aapas mein baat karti hain "
-        "(sawaal-jawab, tokna, himmat dena).\n"
-        "Rules: 8-9 scenes, kul ~130-145 words, speakers proog/emo baari-baari (pehla proog). Har scene ek chhoti "
-        "dumdaar dialogue line (7-12 shabd, 60-65 second se lamba nahi) — narrator nahi, character khud bol raha ho. Pehla scene hook jo "
-        "turant scroll rok de, beech mein struggle se comeback, aakhri line powerful punch. "
-        "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power — aaj ke trend (exam, Monday, "
-        "gym, sapne, rejection) se joda hua fresh angle, purani ghisipiti baat nahi. "
-        "Simple bolchaal ki Hindi, vyakaran sahi, original baat, koi jhootha claim nahi. "
-        "BAHUT ZAROORI: title, hook aur har scene ka text SIRF Devanagari lipi mein ho (जैसे: 'तुम उठोगे नहीं तो कोई और उठ जाएगा'). "
-        "Roman/Hinglish (Latin letters) bilkul mana hai."
-    )
-    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"temperature": 0.9, "responseMimeType": "application/json"}}).encode()
-    for model in GEMINI_MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        try:
-            req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=60) as r:
-                resp = json.loads(r.read())
-            text = resp["candidates"][0]["content"]["parts"][0]["text"]
-            text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
-            data = json.loads(text)
-            if data.get("scenes") and data.get("title"):
-                joined = data["title"] + data.get("hook", "") + " ".join(s.get("text", "") for s in data["scenes"])
-                if not re.search(r"[ऀ-ॿ]", joined):
-                    raise ValueError("script not in Devanagari")
-                print(f"script: Gemini ({model})")
-                return data
-        except Exception as e:
-            print(f"Gemini {model} failed: {e}")
-    return None
-
-
-def fallback_script(index):
-    lib = json.loads((ROOT / "scripts" / "library.json").read_text(encoding="utf-8"))
-    print("script: fallback library")
-    data = lib[index % len(lib)]
-    for i, sc in enumerate(data.get("scenes", [])):
-        sc.setdefault("speaker", "proog" if i % 2 == 0 else "emo")
-    return data
 
 
 def gemini_app(api_key):
@@ -92,42 +40,33 @@ def gemini_app(api_key):
 def main():
     import os
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
-    topics = json.loads((ROOT / "topics.json").read_text(encoding="utf-8"))["topics"]
-    idx = state["next_index"] % len(topics)
-    topic = topics[idx]
+    scene_list = reel.load_scenes()
+    run_no = state.get("scene_index", 0)
+    scene = scene_list[run_no % len(scene_list)]
+    hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
     today = datetime.date.today().isoformat()
+    slug = f"{today}-{run_no % len(scene_list):02d}"
 
-    data = None
-    key = os.environ.get("GEMINI_API_KEY")
-    if key:
-        data = gemini_script(topic, key)
-    if data is None:
-        data = fallback_script(idx)
+    data = {k: scene[k] for k in ("title", "description", "hashtags", "tags", "attribution")}
+    data["privacy"] = "public"
+    (ROOT / "today.json").write_text(
+        json.dumps({**data, "hook": hook, "file": scene["file"]}, ensure_ascii=False, indent=2),
+        encoding="utf-8")
 
-    data["slug"] = f"{today}-{idx:02d}"
-    data["topic"] = topic
-    for i, sc in enumerate(data.get("scenes", [])):
-        if sc.get("speaker") not in ("proog", "emo"):
-            sc["speaker"] = "proog" if i % 2 == 0 else "emo"
-    data.setdefault("privacy", "public")
-    (ROOT / "today.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    video = cinematic.build_video(data)
+    video = reel.build_scene(scene, hook, slug)
     print(f"VIDEO: {video}")
     vid = pipeline.upload(video, data)
 
-    OUT = ROOT / "output"
-    OUT.mkdir(exist_ok=True)
-    with (OUT / "log.txt").open("a", encoding="utf-8") as f:
-        f.write(f"{today} | topic={topic} | youtube_id={vid} | {video.name}\n")
+    with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
+        f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
 
-    if vid:
-        state["next_index"] = (idx + 1) % len(topics)
-        (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
-    else:
+    if not vid:
         print("Auth missing — state advance nahi hua", file=sys.stderr)
         sys.exit(1)
+    state["scene_index"] = run_no + 1
+    (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
+    key = os.environ.get("GEMINI_API_KEY")
     if key:
         html = gemini_app(key)
         if html:
@@ -136,8 +75,6 @@ def main():
             app_path = apps / f"{today}-tool.html"
             app_path.write_text(html, encoding="utf-8")
             print(f"APP: {app_path}")
-            with (OUT / "log.txt").open("a", encoding="utf-8") as f:
-                f.write(f"{today} | app={app_path.name}\n")
 
 
 if __name__ == "__main__":

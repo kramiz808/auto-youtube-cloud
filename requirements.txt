@@ -1,4 +1,2 @@
-edge-tts
-gtts
 google-api-python-client
 google-auth-oauthlib
