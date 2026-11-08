@@ -1,0 +1,49 @@
+name: Daily AI Employee
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ffmpeg + Hindi font
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core
+
+      - name: Install Python deps
+        run: pip install -q -r requirements.txt
+
+      - name: Run daily pipeline
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python daily.py
+
+      - name: Upload video artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-video
+          path: output/*.mp4
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Commit state back
+        if: always()
+        run: |
+          git config user.name "ai-employee"
+          git config user.email "actions@github.com"
+          git add -A
+          git diff --cached --quiet || (git commit -m "daily run $(date -u +%F)" && git push)
