@@ -1,6 +1,7 @@
 token.json
 client_secret.json
 gemini_key.txt
+auth_setup.py
 work/
 output/*.mp4
 today.json
