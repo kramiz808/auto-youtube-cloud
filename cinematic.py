@@ -13,7 +13,7 @@ import pipeline
 from pipeline import FFMPEG, OUT, WORK, run, mp3_duration
 
 ROOT = Path(__file__).resolve().parent
-CLIPS = sorted((ROOT / "assets" / "clips").glob("*.mp4"))
+CLIPS = sorted((ROOT / "assets" / "clips").glob("movie_*.mp4"))
 MUSIC = ROOT / "assets" / "music" / "epic.mp3"
 FONT_FILE = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
 W, H = 1080, 1920
@@ -97,12 +97,15 @@ def build_video(data):
     T = 0.5
     segdur = [d + T for d in durations[:-1]] + [durations[-1] + 0.6]
     segs = []
+    order = CLIPS[:]
+    rng.shuffle(order)
     for i, dur in enumerate(segdur):
-        clip = CLIPS[(i + rng.randrange(len(CLIPS))) % len(CLIPS)]
+        clip = order[i % len(order)]
         seg = WORK / ("cseg_%02d.mp4" % i)
         zoom = ("min(zoom+0.0006,1.18)" if i % 2 == 0 else "max(1.18-0.0006*on,1.0)")
-        run([FFMPEG, "-y", "-stream_loop", "-1", "-i", clip, "-t", f"{dur:.2f}",
+        run([FFMPEG, "-y", "-i", clip, "-t", f"{dur:.2f}",
              "-vf", f"scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,crop={STRIP_W}:{STRIP_H},"
+                    f"tpad=stop_mode=clone:stop_duration=60,"
                     f"zoompan=z='{zoom}':d=1:s={STRIP_W}x{STRIP_H}:fps=30,"
                     f"eq=contrast=1.06:saturation=1.12:brightness=0.01,vignette=PI/5",
              "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-an", seg])

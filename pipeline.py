@@ -125,7 +125,8 @@ def upload(video_path, data):
     body = {
         "snippet": {
             "title": data["title"][:100],
-            "description": data.get("description", "") + "\n\n#shorts #hindi #motivation #mindset",
+            "description": (data.get("description", "") + "\n\n#shorts #hindi #motivation #mindset"
+                            + "\n\nFootage: \"Sintel\" by Blender Foundation (durian.blender.org), licensed CC-BY 3.0"),
             "tags": data.get("tags", ["motivation", "hindi", "mindset"]),
             "categoryId": "27",
         },
