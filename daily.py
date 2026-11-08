@@ -45,10 +45,12 @@ def main():
     run_no = state.get("scene_index", 0)
     scene = scene_list[run_no % len(scene_list)]
     hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
+    titles = scene.get("titles") or [scene["title"]]
     today = datetime.date.today().isoformat()
     slug = f"{today}-{run_no % len(scene_list):02d}"
 
-    data = {k: scene[k] for k in ("title", "description", "hashtags", "tags", "attribution")}
+    data = {k: scene[k] for k in ("description", "hashtags", "tags", "attribution")}
+    data["title"] = titles[(run_no // len(scene_list)) % len(titles)]
     data["privacy"] = "public"
     (ROOT / "today.json").write_text(
         json.dumps({**data, "hook": hook, "file": scene["file"]}, ensure_ascii=False, indent=2),
