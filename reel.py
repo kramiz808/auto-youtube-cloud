@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 from pipeline import FFMPEG, OUT, WORK, media_duration, run
+from voice import make_dub
 
 ROOT = Path(__file__).resolve().parent
 SCENES_JSON = ROOT / "scenes.json"
@@ -49,6 +50,7 @@ def build_scene(scene, hook, slug):
     src = ROOT / scene["file"]
     dur = media_duration(src)
     shutil.copy(FONT_FILE, WORK / "cfont.ttf")
+    dub = make_dub(scene, dur)
 
     filters = []
 
@@ -73,12 +75,18 @@ def build_scene(scene, hook, slug):
              f"crop={STRIP_W}:{STRIP_H},setsar=1,"
              f"eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08[v0];"
              f"[0:v][v0]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)}[v];"
-             f"[1:a]loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+             f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.55[bg];"
+             f"[2:a]highpass=f=85,acompressor=threshold=-18dB:ratio=3:attack=6:release=160,"
+             f"aresample=48000,aformat=channel_layouts=stereo,volume=2.0,asplit=2[voc][sc];"
+             f"[bg][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[duck];"
+             f"[duck][voc]amix=inputs=2:duration=first:normalize=0,"
+             f"alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
 
     out = OUT / f"{slug}.mp4"
     run([FFMPEG, "-y",
          "-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r=30:d={dur:.3f}",
          "-i", src,
+         "-i", dub,
          "-filter_complex", strip,
          "-map", "[v]", "-map", "[a]",
          "-t", f"{dur:.3f}",
