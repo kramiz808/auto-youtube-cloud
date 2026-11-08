@@ -1,15 +1,10 @@
-import base64
-import json
-import os
+import asyncio
 import random
 import re
-import time
-import urllib.error
-import urllib.request
-import wave
 from pathlib import Path
 
-import pipeline
+import edge_tts
+
 from pipeline import FFMPEG, OUT, WORK, run, mp3_duration
 
 ROOT = Path(__file__).resolve().parent
@@ -20,59 +15,52 @@ FONT_FILE = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
 W, H = 1080, 1920
 STRIP_W, STRIP_H = 1080, 608
 STRIP_Y = 600
-TTS_MODEL = "gemini-2.5-flash-preview-tts"
-TTS_VOICE = "Charon"
+VOICE = "hi-IN-MadhurNeural"
+VOICES = {"proog": ("-10%", "-28Hz"), "emo": ("+10%", "+14Hz")}
+GAP = 0.35
+CLIP_SPEAKER = {"movie_01": "proog", "movie_02": "proog", "movie_03": "emo", "movie_04": "both",
+                "movie_05": "proog", "movie_06": "both", "movie_07": "emo", "movie_08": "proog",
+                "movie_09": "emo", "movie_10": "proog", "movie_11": "emo"}
 
 
-def _gemini_tts(text, path):
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        raise RuntimeError("no key")
-    prompt = ("Speak in Hindi with a deep, powerful, dramatic and emotional male motivational-speaker "
-              "voice, like a cinematic movie-trailer narration. Begin low and intense, gradually build "
-              "passion and energy, pause briefly between sentences for impact, and deliver the final line "
-              "with full power. Natural breathing and real feeling, never robotic. Say: " + text)
-    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"responseModalities": ["AUDIO"],
-                                            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": TTS_VOICE}}}}}).encode()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{TTS_MODEL}:generateContent?key={key}"
-    resp = None
-    for attempt in range(4):
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                resp = json.loads(r.read())
-            break
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="ignore") if e.code == 429 else ""
-            if e.code == 429 and "per day" in detail.lower():
-                raise RuntimeError("daily TTS quota exhausted")
-            if e.code in (429, 500, 503) and attempt < 3:
-                wait = 25 * (attempt + 1)
-                print(f"gemini-tts {e.code}, retry {attempt+1} in {wait}s")
-                time.sleep(wait)
-                continue
-            raise
-    if resp is None:
-        raise RuntimeError("tts no response")
-    part = resp["candidates"][0]["content"]["parts"][0]
-    inline = part.get("inlineData") or part.get("inline_data")
-    pcm = base64.b64decode(inline["data"])
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
-        w.writeframes(pcm)
+def line_voice(text, path, speaker):
+    rate, pitch = VOICES.get(speaker, VOICES["proog"])
 
+    async def _go():
+        await edge_tts.Communicate(text, VOICE, rate=rate, pitch=pitch).save(str(path))
 
-def scene_voice(text, path):
     try:
-        _gemini_tts(text, path)
+        asyncio.run(_go())
         if path.stat().st_size > 1000:
             return
     except Exception as e:
-        print(f"gemini-tts failed ({e}), edge-tts fallback")
-    tmp = path.with_suffix(".mp3")
-    pipeline.make_voice(text, tmp)
-    run([FFMPEG, "-y", "-i", tmp, "-ar", "24000", "-ac", "1", path])
+        print(f"edge-tts failed ({e}), gTTS fallback")
+    from gtts import gTTS
+    gTTS(text, lang="hi").save(str(path))
+
+
+def make_silence(path, dur=GAP):
+    run([FFMPEG, "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", f"{dur}",
+         "-c:a", "libmp3lame", "-q:a", "6", path])
+
+
+def pick_clips(scenes, rng):
+    pools = {"proog": [], "emo": [], "both": []}
+    for c in CLIPS:
+        pools[CLIP_SPEAKER.get(c.stem, "both")].append(c)
+    for p in pools.values():
+        rng.shuffle(p)
+    idx = {"proog": 0, "emo": 0, "both": 0}
+    out = []
+    for i, sc in enumerate(scenes):
+        speaker = sc.get("speaker", "proog" if i % 2 == 0 else "emo")
+        key = speaker if (i % 4 != 3 and pools.get(speaker)) else "both"
+        if not pools.get(key):
+            key = "proog" if pools.get("proog") else "both"
+        clip = pools[key][idx.get(key, 0) % len(pools[key])]
+        idx[key] = idx.get(key, 0) + 1
+        out.append(clip)
+    return out
 
 
 def _clean(s):
@@ -93,23 +81,36 @@ def build_video(data):
     scenes = data["scenes"]
     rng = random.Random(data.get("slug", "x"))
 
-    voice = WORK / "cvoice.wav"
-    full_text = " ".join(sc["text"] for sc in scenes)
-    scene_voice(full_text, voice)
-    usable = mp3_duration(voice)
-    weights = [max(1, len(sc["text"])) for sc in scenes]
-    sw = sum(weights)
-    durations = [usable * w / sw for w in weights]
-    total = usable + 0.6
+    voice = WORK / "cvoice.mp3"
+    sil = WORK / "csil.mp3"
+    make_silence(sil)
+    line_files, line_durs = [], []
+    for i, sc in enumerate(scenes):
+        p = WORK / f"cvoice_{i:02d}.mp3"
+        line_voice(sc["text"], p, sc.get("speaker", "proog" if i % 2 == 0 else "emo"))
+        line_files.append(p)
+        line_durs.append(mp3_duration(p))
+
+    parts = []
+    for i, p in enumerate(line_files):
+        parts.append(f"file '{p.as_posix()}'")
+        if i < len(line_files) - 1:
+            parts.append(f"file '{sil.as_posix()}'")
+    concat_list = WORK / "cvoice_list.txt"
+    concat_list.write_text("\n".join(parts), encoding="utf-8")
+    run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+         "-ar", "24000", "-ac", "1", "-c:a", "libmp3lame", "-q:a", "4", voice])
+
+    durations = [d + GAP for d in line_durs[:-1]] + [line_durs[-1] + 0.45]
+    total = sum(durations)
 
     # center strip: per-scene graded clip segments with zoom variety (xfade overlaps)
     T = 0.5
     segdur = [d + T for d in durations[:-1]] + [durations[-1] + 0.6]
     segs = []
-    order = CLIPS[:]
-    rng.shuffle(order)
+    clips = pick_clips(scenes, rng)
     for i, dur in enumerate(segdur):
-        clip = order[i % len(order)]
+        clip = clips[i]
         seg = WORK / ("cseg_%02d.mp4" % i)
         zoom = ("min(zoom+0.0006,1.18)" if i % 2 == 0 else "max(1.18-0.0006*on,1.0)")
         run([FFMPEG, "-y", "-stream_loop", "-1", "-i", clip, "-t", f"{dur:.2f}",

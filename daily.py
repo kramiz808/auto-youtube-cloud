@@ -14,17 +14,21 @@ GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-
 
 def gemini_script(topic, api_key):
     prompt = (
-        f'Topic: "{topic}"\n'
-        "Likho ek 60-second YouTube Shorts motivational script Devanagari Hindi mein. SIRF JSON return karo, koi aur text nahi:\n"
-        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "hook": "top-screen bold text <=60 chars, punchy curiosity line",'
+        f'Topic: "{topic}" | Aaj ki date: {datetime.date.today().isoformat()}\n'
+        "Likho ek 55-60 second YouTube Shorts motivational DIALOGUE Devanagari Hindi mein — do cartoon movie "
+        "characters ke beech baatcheet. SIRF JSON return karo, koi aur text nahi:\n"
+        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "hook": "top-screen bold text <=55 chars, trending reel jaisa scroll-roking sawaal ya ulti baat",'
         ' "description": "2 lines Hindi + motivational keywords",'
         ' "tags": ["motivation", "hindi", "mindset", "success", "4-6 relevant tags"],'
-        ' "scenes": [{"text": "scene ka text"}]}\n'
-        "Rules: 9-11 scenes, kul ~190 words. Style: cinematic character dialogue — har scene ki line ek gehri (deep) "
-        "boli hui baat ho, jaise movie ka character screen par bol raha ho: chhote dumdaar vaaky, seedha 'tum'/'main' "
-        "kehkar, emotional aur jazbaati. Pehla scene strong hook (chaunkane wali baat ya sawaal), "
-        "beech mein struggle se rise/comeback ka safar, aakhri scene mein powerful punch + subscribe CTA. "
-        "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power, never give up. "
+        ' "scenes": [{"speaker": "proog", "text": "us character ki line"}]}\n'
+        "Characters: proog = budha, bhaari, dheemi lekin bahut gehri aawaz wala ustaad; "
+        "emo = jawan, tez, gusse aur bhookh wala ladka. Dono ki lines aapas mein baat karti hain "
+        "(sawaal-jawab, tokna, himmat dena).\n"
+        "Rules: 9-11 scenes, kul ~190 words, speakers proog/emo baari-baari (pehla proog). Har scene ek chhoti "
+        "dumdaar dialogue line (8-16 shabd) — narrator nahi, character khud bol raha ho. Pehla scene hook jo "
+        "turant scroll rok de, beech mein struggle se comeback, aakhri line powerful punch. "
+        "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power — aaj ke trend (exam, Monday, "
+        "gym, sapne, rejection) se joda hua fresh angle, purani ghisipiti baat nahi. "
         "Simple bolchaal ki Hindi, original baat, koi jhootha claim nahi. "
         "BAHUT ZAROORI: title, hook aur har scene ka text SIRF Devanagari lipi mein ho (जैसे: 'तुम उठोगे नहीं तो कोई और उठ जाएगा'). "
         "Roman/Hinglish (Latin letters) bilkul mana hai."
@@ -54,7 +58,10 @@ def gemini_script(topic, api_key):
 def fallback_script(index):
     lib = json.loads((ROOT / "scripts" / "library.json").read_text(encoding="utf-8"))
     print("script: fallback library")
-    return lib[index % len(lib)]
+    data = lib[index % len(lib)]
+    for i, sc in enumerate(data.get("scenes", [])):
+        sc.setdefault("speaker", "proog" if i % 2 == 0 else "emo")
+    return data
 
 
 def gemini_app(api_key):
@@ -99,6 +106,9 @@ def main():
 
     data["slug"] = f"{today}-{idx:02d}"
     data["topic"] = topic
+    for i, sc in enumerate(data.get("scenes", [])):
+        if sc.get("speaker") not in ("proog", "emo"):
+            sc["speaker"] = "proog" if i % 2 == 0 else "emo"
     data.setdefault("privacy", "public")
     (ROOT / "today.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
