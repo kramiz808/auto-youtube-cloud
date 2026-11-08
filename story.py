@@ -327,6 +327,11 @@ def split_upload(video, data):
 
 def main():
     import datetime
+    today = datetime.date.today().isoformat()
+    log = OUT / "stories.txt"
+    if log.exists() and any(l.startswith(today) for l in log.read_text(encoding="utf-8").splitlines()):
+        print("SKIP: aaj ki story already upload ho chuki hai")
+        sys.exit(0)
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
     idx = state.get("story_index", 0)
     topic = TOPICS[idx % len(TOPICS)]
