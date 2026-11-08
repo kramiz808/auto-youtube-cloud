@@ -8,3 +8,5 @@
 2026-11-08 | app=2026-11-08-tool.html
 2026-11-08 | topic=Haar maanne se pehle ye socho | youtube_id=xvs_kMD99UA | 2026-11-08-02.mp4
 2026-11-08 | app=2026-11-08-tool.html
+2026-11-08 | topic=Darr ke aage jeet hai | youtube_id=AIYHnlPqrDw | 2026-11-08-03.mp4
+2026-11-08 | app=2026-11-08-tool.html
