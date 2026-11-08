@@ -20,7 +20,7 @@ def gemini_script(topic, api_key):
         ' "description": "2 lines Hindi + motivational keywords",'
         ' "tags": ["motivation", "hindi", "mindset", "success", "4-6 relevant tags"],'
         ' "scenes": [{"text": "scene ka text"}]}\n'
-        "Rules: 7-9 scenes, kul ~140 words. Style: cinematic motivational speech — chhote dumdaar vaaky, "
+        "Rules: 9-11 scenes, kul ~190 words. Style: cinematic motivational speech — chhote dumdaar vaaky, "
         "seedha 'tum' kehkar baat karo, emotional aur jazbaati. Pehla scene strong hook (chaunkane wali baat ya sawaal), "
         "beech mein struggle se rise/comeback ka safar, aakhri scene mein powerful punch + subscribe CTA. "
         "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power, never give up. "
