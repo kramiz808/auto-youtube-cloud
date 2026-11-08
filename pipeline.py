@@ -126,7 +126,8 @@ def upload(video_path, data):
         "snippet": {
             "title": data["title"][:100],
             "description": (data.get("description", "") + "\n\n#shorts #hindi #motivation #mindset"
-                            + "\n\nFootage: \"Sintel\" by Blender Foundation (durian.blender.org), licensed CC-BY 3.0"),
+                            + "\n\nFootage: \"Elephants Dream\" (2006) by Blender Foundation / Orange Open Movie Project "
+                              "(orange.blender.org), licensed CC-BY 2.5"),
             "tags": data.get("tags", ["motivation", "hindi", "mindset"]),
             "categoryId": "27",
         },

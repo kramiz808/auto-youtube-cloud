@@ -112,9 +112,8 @@ def build_video(data):
         clip = order[i % len(order)]
         seg = WORK / ("cseg_%02d.mp4" % i)
         zoom = ("min(zoom+0.0006,1.18)" if i % 2 == 0 else "max(1.18-0.0006*on,1.0)")
-        run([FFMPEG, "-y", "-i", clip, "-t", f"{dur:.2f}",
+        run([FFMPEG, "-y", "-stream_loop", "-1", "-i", clip, "-t", f"{dur:.2f}",
              "-vf", f"scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,crop={STRIP_W}:{STRIP_H},"
-                    f"tpad=stop_mode=clone:stop_duration=60,"
                     f"zoompan=z='{zoom}':d=1:s={STRIP_W}x{STRIP_H}:fps=30,"
                     f"eq=contrast=1.06:saturation=1.12:brightness=0.01,vignette=PI/5",
              "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-an", seg])
