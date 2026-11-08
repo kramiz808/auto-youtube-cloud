@@ -5,6 +5,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import cinematic
 import pipeline
 
 ROOT = Path(__file__).resolve().parent
@@ -15,7 +16,8 @@ def gemini_script(topic, api_key):
     prompt = (
         f'Topic: "{topic}"\n'
         "Likho ek 60-second YouTube Shorts motivational script Devanagari Hindi mein. SIRF JSON return karo, koi aur text nahi:\n"
-        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "description": "2 lines Hindi + motivational keywords",'
+        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "hook": "top-screen bold text <=60 chars, punchy curiosity line",'
+        ' "description": "2 lines Hindi + motivational keywords",'
         ' "tags": ["motivation", "hindi", "mindset", "success", "4-6 relevant tags"],'
         ' "scenes": [{"text": "scene ka text"}]}\n'
         "Rules: 7-9 scenes, kul ~140 words. Style: cinematic motivational speech — chhote dumdaar vaaky, "
@@ -93,7 +95,7 @@ def main():
     data.setdefault("privacy", "public")
     (ROOT / "today.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    video = pipeline.build_video(data)
+    video = cinematic.build_video(data)
     print(f"VIDEO: {video}")
     vid = pipeline.upload(video, data)
 
