@@ -125,8 +125,8 @@ def upload(video_path, data):
     body = {
         "snippet": {
             "title": data["title"][:100],
-            "description": data.get("description", "") + "\n\n#shorts #hindi #ai",
-            "tags": data.get("tags", ["ai", "hindi", "business"]),
+            "description": data.get("description", "") + "\n\n#shorts #hindi #motivation #mindset",
+            "tags": data.get("tags", ["motivation", "hindi", "mindset"]),
             "categoryId": "27",
         },
         "status": {

@@ -14,13 +14,15 @@ GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-
 def gemini_script(topic, api_key):
     prompt = (
         f'Topic: "{topic}"\n'
-        "Likho ek 60-second YouTube Shorts script Devanagari Hindi mein. SIRF JSON return karo, koi aur text nahi:\n"
-        '{"title": "catchy title <=90 chars, #shorts end mein", "description": "2 lines Hindi + keywords",'
-        ' "tags": ["ai", "hindi", "business", "4-6 relevant tags"],'
+        "Likho ek 60-second YouTube Shorts motivational script Devanagari Hindi mein. SIRF JSON return karo, koi aur text nahi:\n"
+        '{"title": "catchy motivational title <=90 chars, #shorts end mein", "description": "2 lines Hindi + motivational keywords",'
+        ' "tags": ["motivation", "hindi", "mindset", "success", "4-6 relevant tags"],'
         ' "scenes": [{"text": "scene ka text"}]}\n'
-        "Rules: 7-9 scenes, kul ~140 words, pehla scene strong hook (sawaal ya chaunkane wali baat), "
-        "aakhri scene mein subscribe CTA. Har scene 1-2 chhote vaaky. Simple bolchaal ki Hindi, "
-        "AI/paisa/business knowledge angle. Facts accurate rakho, koi jhootha claim nahi."
+        "Rules: 7-9 scenes, kul ~140 words. Style: cinematic motivational speech — chhote dumdaar vaaky, "
+        "seedha 'tum' kehkar baat karo, emotional aur jazbaati. Pehla scene strong hook (chaunkane wali baat ya sawaal), "
+        "beech mein struggle se rise/comeback ka safar, aakhri scene mein powerful punch + subscribe CTA. "
+        "Theme: discipline, self-belief, mehnat, darr pe jeet, pain-to-power, never give up. "
+        "Simple bolchaal ki Hindi, original baat, koi jhootha claim nahi."
     )
     body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
                        "generationConfig": {"temperature": 0.9, "responseMimeType": "application/json"}}).encode()
