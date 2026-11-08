@@ -70,7 +70,8 @@ def build_scene(scene, hook, slug):
         f"x=(w-text_w)/2:y={MARK_Y}")
 
     strip = (f"[1:v]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
-             f"crop={STRIP_W}:{STRIP_H},setsar=1,eq=contrast=1.05:saturation=1.06[v0];"
+             f"crop={STRIP_W}:{STRIP_H},setsar=1,"
+             f"eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08[v0];"
              f"[0:v][v0]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)}[v];"
              f"[1:a]loudnorm=I=-14:TP=-1.5:LRA=11[a]")
 

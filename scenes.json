@@ -3,81 +3,81 @@
     {
       "file": "assets/scenes/sintel_02.mp4",
       "hooks": [
-        "A movie scene that will melt your heart",
-        "The softest scene in any animated movie"
+        "एक मूवी सीन जो आपका दिल पिघला देगा",
+        "सबसे दिल छू लेने वाला एनिमेटेड सीन"
       ],
-      "title": "The softest scene in any animated movie #shorts",
-      "description": "She found a tiny dragon alone in the ruins and gave it a home.\nSome bonds are forever. A real movie scene, watch till the end.",
-      "hashtags": "#shorts #movie #emotional #dragon #animation",
-      "tags": ["movie scene", "sintel", "animation short film", "emotional", "dragon", "heartfelt"],
+      "title": "एक मूवी सीन जो आपका दिल पिघला देगा #shorts",
+      "description": "उसे खंडहर में एक छोटा ड्रैगन अकेला मिला, और उसने उसे घर दे दिया।\nकुछ रिश्ते हमेशा के लिए होते हैं। ये असली मूवी सीन है, अंत तक देखें।",
+      "hashtags": "#shorts #hindi #movie #emotional #dragon",
+      "tags": ["movie scene", "hindi", "emotional", "dragon", "animation short film", "sintel"],
       "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0",
       "subs": [
-        {"start": 12.25, "end": 15.5, "text": "We're almost done. Shhh..."},
-        {"start": 15.75, "end": 18.5, "text": "Hey, sit still."},
-        {"start": 33.25, "end": 37.25, "text": "Good night, Scales."},
-        {"start": 55.35, "end": 58.85, "text": "Get him, Scales! Come on!"},
-        {"start": 70.25, "end": 73.25, "text": "Scales?"}
+        {"start": 12.25, "end": 15.5, "text": "बस हो गया। श्श्श..."},
+        {"start": 15.75, "end": 18.5, "text": "अरे, शांत बैठो।"},
+        {"start": 33.25, "end": 37.25, "text": "शुभ रात, स्केल्स।"},
+        {"start": 55.35, "end": 58.85, "text": "पकड़ो उसे, स्केल्स! चलो!"},
+        {"start": 70.25, "end": 73.25, "text": "स्केल्स?"}
       ]
     },
     {
       "file": "assets/scenes/sintel_01.mp4",
       "hooks": [
-        "A movie scene that changes your life forever",
-        "A movie scene about being completely alone"
+        "एक मूवी सीन जो आपकी ज़िंदगी बदल देगा",
+        "अकेलेपन की सच्चाई पर एक मूवी सीन"
       ],
-      "title": "A movie scene that changes your life forever #shorts",
-      "description": "A lone traveler, a blade with a dark past, and one answer that says everything.\nWatch it till the last line. A real movie scene — no filters, no voiceover.",
-      "hashtags": "#shorts #movie #sad #mindset #sintel",
-      "tags": ["movie scene", "sintel", "animation short film", "emotional", "mood", "cinematic"],
+      "title": "एक मूवी सीन जो आपकी ज़िंदगी बदल देगा #shorts",
+      "description": "एक अकेली यात्री, अंधे अतीत वाली तलवार, और एक जवाब जो सब कह देता है।\nये असली मूवी सीन है, आखिरी लाइन तक देखें।",
+      "hashtags": "#shorts #hindi #movie #emotional #sintel",
+      "tags": ["movie scene", "hindi", "emotional", "alone", "animation short film", "sintel"],
       "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0",
       "subs": [
-        {"start": 7.25, "end": 9.22, "text": "This blade has a dark past."},
-        {"start": 11.8, "end": 15.8, "text": "It has shed much innocent blood."},
-        {"start": 18.0, "end": 21.45, "text": "You're a fool for traveling alone, so completely unprepared."},
-        {"start": 21.75, "end": 24.8, "text": "You're lucky your blood's still flowing."},
-        {"start": 25.25, "end": 26.3, "text": "Thank you."},
-        {"start": 27.5, "end": 29.0, "text": "So..."},
-        {"start": 29.4, "end": 33.8, "text": "What brings you to the land of the gatekeepers?"},
-        {"start": 35.0, "end": 37.5, "text": "I'm searching for someone."},
-        {"start": 38.0, "end": 42.2, "text": "Someone very dear? A kindred spirit?"},
-        {"start": 43.4, "end": 45.0, "text": "A dragon."},
-        {"start": 48.85, "end": 51.75, "text": "A dangerous quest for a lone hunter."},
-        {"start": 52.95, "end": 55.87, "text": "I've been alone for as long as I can remember."}
+        {"start": 7.25, "end": 9.22, "text": "इस तलवार का अतीत अंधेरा है।"},
+        {"start": 11.8, "end": 15.8, "text": "इसने बहुत मासूमों का खून बहाया है।"},
+        {"start": 18.0, "end": 21.45, "text": "अकेले निकलना तुम्हारी मूर्खता है, बिना तैयारी।"},
+        {"start": 21.75, "end": 24.8, "text": "खुशकिस्मत हो कि अभी खून बह रहा है।"},
+        {"start": 25.25, "end": 26.3, "text": "धन्यवाद।"},
+        {"start": 27.5, "end": 29.0, "text": "तो..."},
+        {"start": 29.4, "end": 33.8, "text": "रक्षकों की भूमि पर क्या लाया तुम्हें?"},
+        {"start": 35.0, "end": 37.5, "text": "मैं किसी को ढूंढ रही हूँ।"},
+        {"start": 38.0, "end": 42.2, "text": "कोई बहुत अपना? हमसफ़र?"},
+        {"start": 43.4, "end": 45.0, "text": "एक ड्रैगन।"},
+        {"start": 48.85, "end": 51.75, "text": "अकेले शिकारी के लिए खतरनाक काम।"},
+        {"start": 52.95, "end": 55.87, "text": "जब से याद है, मैं अकेली रही हूँ।"}
       ]
     },
     {
       "file": "assets/scenes/sintel_03.mp4",
       "hooks": [
-        "A movie scene that changes how you see failure",
-        "You have not failed, you just can't see yet"
+        "एक मूवी सीन जो हार का मतलब बदल देगा",
+        "तुम हारे नहीं, बस देख नहीं पाए"
       ],
-      "title": "You have not failed, you just can't see yet #shorts",
-      "description": "She searched her whole life and thought she had failed.\nA real movie scene that changes how you see failure.",
-      "hashtags": "#shorts #movie #failure #mindset #sintel",
-      "tags": ["movie scene", "sintel", "animation short film", "failure", "mindset", "cinematic"],
+      "title": "तुम हारे नहीं, बस देख नहीं पाए #shorts",
+      "description": "उसने पूरी ज़िंदगी ढूंढा और सोचा कि वो हार गई।\nये असली मूवी सीन है जो हार का मतलब बदल देगा।",
+      "hashtags": "#shorts #hindi #movie #failure #mindset",
+      "tags": ["movie scene", "hindi", "failure", "mindset", "animation short film", "sintel"],
       "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0",
       "subs": [
-        {"start": 20.85, "end": 22.5, "text": "I have failed."},
-        {"start": 27.8, "end": 31.5, "text": "You've only failed to see..."},
-        {"start": 32.8, "end": 35.5, "text": "These are dragon lands, Sintel."},
-        {"start": 35.85, "end": 39.0, "text": "You are closer than you know."}
+        {"start": 20.85, "end": 22.5, "text": "मैं हार गई।"},
+        {"start": 27.8, "end": 31.5, "text": "तुम सिर्फ देख नहीं पाई..."},
+        {"start": 32.8, "end": 35.5, "text": "ये ड्रैगन की भूमि है, सिंटेल।"},
+        {"start": 35.85, "end": 39.0, "text": "तुम सोच से भी ज़्यादा करीब हो।"}
       ]
     },
     {
       "file": "assets/scenes/sintel_04.mp4",
       "hooks": [
-        "The most heartbreaking movie scene ever animated",
-        "A movie scene that will break your heart"
+        "सबसे दिल तोड़ने वाला एनिमेटेड सीन",
+        "एक मूवी सीन जो आपका दिल तोड़ देगा"
       ],
-      "title": "The most heartbreaking scene ever animated #shorts",
-      "description": "Years of searching, one cave, and the moment she finally understands.\nThe ending of a real movie scene. Watch till the end with sound on.",
-      "hashtags": "#shorts #movie #sad #emotional #sintel",
-      "tags": ["movie scene", "sintel", "animation short film", "sad", "emotional", "cinematic"],
+      "title": "सबसे दिल तोड़ने वाला एनिमेटेड सीन #shorts",
+      "description": "सालों की तलाश, एक गुफा, और वो पल जब उसे आखिरकार समझ आता है।\nअसली मूवी सीन का अंत। आवाज़ के साथ, अंत तक देखें।",
+      "hashtags": "#shorts #hindi #movie #sad #emotional",
+      "tags": ["movie scene", "hindi", "sad", "emotional", "animation short film", "sintel"],
       "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0",
       "subs": [
-        {"start": 9.6, "end": 11.5, "text": "Scales!"},
-        {"start": 13.6, "end": 16.0, "text": "Scales?"},
-        {"start": 18.2, "end": 21.8, "text": "Scales..."}
+        {"start": 9.6, "end": 11.5, "text": "स्केल्स!"},
+        {"start": 13.6, "end": 16.0, "text": "स्केल्स?"},
+        {"start": 18.2, "end": 21.8, "text": "स्केल्स..."}
       ]
     }
   ]
