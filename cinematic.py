@@ -1,8 +1,8 @@
-import asyncio
 import base64
 import json
 import os
 import random
+import re
 import time
 import urllib.error
 import urllib.request
@@ -72,6 +72,10 @@ def scene_voice(text, path):
     run([FFMPEG, "-y", "-i", tmp, "-ar", "24000", "-ac", "1", path])
 
 
+def _clean(s):
+    return re.sub(r"[^ -~ऀ-ॿ।॥]", "", s)
+
+
 def build_video(data):
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
@@ -102,26 +106,27 @@ def build_video(data):
     strip = WORK / "cstrip.mp4"
     run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", sl, "-c", "copy", strip])
 
-    # subtitles: per-scene drawtext (bundled font, no fontconfig dependency)
+    # subtitles: per-line drawtext (bundled font, no fontconfig/newline glyph issues)
     sub_filters = []
     t = 0.0
     for i, (sc, dur) in enumerate(zip(scenes, durations)):
         wrapped, cur = [], ""
-        for word in sc["text"].replace("\n", " ").split():
+        for word in _clean(sc["text"]).split():
             if len(cur) + len(word) + 1 > 32:
                 wrapped.append(cur); cur = word
             else:
                 cur = (cur + " " + word).strip()
         if cur:
             wrapped.append(cur)
-        (WORK / ("csub_%02d.txt" % i)).write_text("\n".join(wrapped[:3]), encoding="utf-8")
-        sub_filters.append(
-            f"drawtext=fontfile=cfont.ttf:textfile=csub_{i:02d}.txt:fontcolor=white:fontsize=54:"
-            f"line_spacing=10:x=(w-text_w)/2:y=1250:borderw=3:bordercolor=black:"
-            f"enable='between(t,{t:.2f},{t+dur-0.15:.2f})'")
+        for j, ln in enumerate(wrapped[:3]):
+            (WORK / ("csub_%02d_%d.txt" % (i, j))).write_text(ln, encoding="utf-8")
+            sub_filters.append(
+                f"drawtext=fontfile=cfont.ttf:textfile=csub_{i:02d}_{j}.txt:fontcolor=white:fontsize=54:"
+                f"x=(w-text_w)/2:y={1250+j*70}:borderw=3:bordercolor=black:"
+                f"enable='between(t,{t:.2f},{t+dur-0.15:.2f})'")
         t += dur
 
-    hook = (data.get("hook") or data["title"]).replace("#shorts", "").strip()
+    hook = _clean((data.get("hook") or data["title"]).replace("#shorts", "")).strip()
     hook_lines = []
     cur = ""
     for word in hook.split():
@@ -131,16 +136,18 @@ def build_video(data):
             cur = (cur + " " + word).strip()
     if cur:
         hook_lines.append(cur)
-    hook_text = "\n".join(hook_lines[:3])
-    hook_file = WORK / "chook.txt"
-    hook_file.write_text(hook_text, encoding="utf-8")
+    hook_filters = []
+    for j, ln in enumerate(hook_lines[:3]):
+        (WORK / ("chook_%d.txt" % j)).write_text(ln, encoding="utf-8")
+        hook_filters.append(
+            f"drawtext=fontfile=cfont.ttf:textfile=chook_{j}.txt:fontcolor=white:fontsize=62:"
+            f"x=(w-text_w)/2:y={210+j*80}:borderw=3:bordercolor=black")
 
     import shutil
     shutil.copy(FONT_FILE, WORK / "cfont.ttf")
     out = OUT / f"{data.get('slug', 'video')}.mp4"
     vf = (f"overlay=0:{STRIP_Y},"
-          f"drawtext=fontfile=cfont.ttf:textfile=chook.txt:fontcolor=white:fontsize=62:"
-          f"line_spacing=14:x=(w-text_w)/2:y=210:borderw=3:bordercolor=black,"
+          + ",".join(hook_filters) + ","
           f"drawtext=fontfile=cfont.ttf:text='| KALEEM ASAGAR |':fontcolor=0xAAAAAA:fontsize=30:"
           f"x=(w-text_w)/2:y=1760,"
           + ",".join(sub_filters))
