@@ -3,6 +3,7 @@ name: Daily Hindi story (20-25 min)
 on:
   schedule:
     - cron: '0 13,14,16,17 * * *'
+    - cron: '5 7,8,9 * * *'
   workflow_dispatch:
 
 permissions:

@@ -438,7 +438,8 @@ def main():
     from pipeline import mark_blocked, upload, upload_blocked, UploadLimitReached
     today = datetime.date.today().isoformat()
     log = OUT / "stories.txt"
-    if log.exists() and any(l.startswith(today) for l in log.read_text(encoding="utf-8").splitlines()):
+    if log.exists() and any(l.startswith(today) and "| ep" in l
+                            for l in log.read_text(encoding="utf-8").splitlines()):
         print("SKIP: aaj ka episode pehle hi upload ho chuka hai")
         sys.exit(0)
     if already_on_channel(today, SERIES["series"]):
