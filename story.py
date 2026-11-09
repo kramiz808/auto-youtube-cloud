@@ -327,10 +327,14 @@ def split_upload(video, data):
 
 def main():
     import datetime
+    from pipeline import mark_blocked, upload_blocked
     today = datetime.date.today().isoformat()
     log = OUT / "stories.txt"
     if log.exists() and any(l.startswith(today) for l in log.read_text(encoding="utf-8").splitlines()):
         print("SKIP: aaj ki story already upload ho chuki hai")
+        sys.exit(0)
+    if upload_blocked():
+        print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
     idx = state.get("story_index", 0)
@@ -357,6 +361,7 @@ def main():
     try:
         vid = upload(video, data)
     except UploadLimitReached as exc:
+        mark_blocked()
         print("SKIP: upload limit full —", str(exc)[:80], file=sys.stderr)
         sys.exit(0)
     except Exception as exc:
@@ -368,6 +373,7 @@ def main():
     with (ROOT / "output" / "stories.txt").open("a", encoding="utf-8") as f:
         f.write(f"{datetime.date.today().isoformat()} | {topic} | {minutes}min | youtu.be/{vid}\n")
     if vid:
+        state.pop("blocked_until", None)
         state["story_index"] = idx + 1
         (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
 

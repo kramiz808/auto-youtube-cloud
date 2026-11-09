@@ -11,6 +11,16 @@ import voice
 
 ROOT = Path(__file__).resolve().parent
 GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def slot_now():
+    hour = datetime.datetime.now(IST).hour
+    if 6 <= hour < 13:
+        return "morning"
+    if 18 <= hour < 23:
+        return "evening"
+    return None
 
 
 def gemini_app(api_key):
@@ -41,6 +51,17 @@ def gemini_app(api_key):
 def main():
     import os
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
+    slot = slot_now()
+    if slot is None:
+        print("SKIP: posting window ke bahar (6am-1pm / 6pm-11pm IST)")
+        sys.exit(0)
+    if pipeline.upload_blocked():
+        print("SKIP: YouTube upload quota reset ka intezaar")
+        sys.exit(0)
+    posts = ROOT / "output" / "posts.txt"
+    if posts.exists() and f"{datetime.datetime.now(IST).date()} {slot}" in posts.read_text(encoding="utf-8"):
+        print(f"SKIP: aaj ka {slot} post ho chuka")
+        sys.exit(0)
     scene_list = reel.load_scenes()
     run_no = state.get("scene_index", 0)
     scene = scene_list[run_no % len(scene_list)]
@@ -66,12 +87,17 @@ def main():
     try:
         vid = pipeline.upload(video, data)
     except pipeline.UploadLimitReached:
-        print("SKIP: YouTube ka daily upload limit full hai. State advance nahi hua — "
-              "agla run retry karega.", file=sys.stderr)
+        pipeline.mark_blocked()
+        print("SKIP: YouTube ka daily upload limit full hai. Reset ke baad apne aap retry.",
+              file=sys.stderr)
         sys.exit(0)
 
+    now = datetime.datetime.now(IST)
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
         f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
+    with posts.open("a", encoding="utf-8") as f:
+        f.write(f"{now.date()} {slot} | {vid} | {scene['file']}\n")
+    state.pop("blocked_until", None)
 
     if not vid:
         print("Auth missing — state advance nahi hua", file=sys.stderr)

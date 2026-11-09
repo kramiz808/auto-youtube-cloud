@@ -3,6 +3,7 @@ import os
 import platform
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +34,27 @@ def media_duration(path):
     out = run([FFPROBE, "-v", "error", "-show_entries", "format=duration",
                "-of", "default=noprint_wrappers=1:nokey=1", path])
     return float(out.strip())
+
+
+def upload_blocked():
+    """True jab tak YouTube ka daily upload quota reset na ho (midnight Pacific = 08:05 UTC)."""
+    path = ROOT / "state.json"
+    if not path.exists():
+        return False
+    until = json.loads(path.read_text(encoding="utf-8")).get("blocked_until")
+    return bool(until) and datetime.now(timezone.utc) < datetime.fromisoformat(until)
+
+
+def mark_blocked():
+    path = ROOT / "state.json"
+    state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    now = datetime.now(timezone.utc)
+    reset = now.replace(hour=8, minute=5, second=0, microsecond=0)
+    if reset <= now:
+        reset += timedelta(days=1)
+    state["blocked_until"] = reset.isoformat()
+    path.write_text(json.dumps(state), encoding="utf-8")
+    print("upload blocked till", reset.isoformat())
 
 
 def get_creds(scopes=None):
