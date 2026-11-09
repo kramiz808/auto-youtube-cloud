@@ -1,6 +1,7 @@
 token.json
 client_secret.json
 gemini_key.txt
+ig_token.txt
 auth_setup.py
 work/
 output/*.mp4

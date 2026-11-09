@@ -34,6 +34,7 @@ jobs:
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
           FORCE: ${{ inputs.force && '1' || '0' }}
         run: python daily.py
 

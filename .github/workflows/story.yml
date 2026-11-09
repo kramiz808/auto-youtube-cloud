@@ -30,6 +30,7 @@ jobs:
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
         run: python story.py
 
       - name: Upload story artifact

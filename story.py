@@ -372,6 +372,14 @@ def main():
             raise
     with (ROOT / "output" / "stories.txt").open("a", encoding="utf-8") as f:
         f.write(f"{datetime.date.today().isoformat()} | {topic} | {minutes}min | youtu.be/{vid}\n")
+    try:
+        import ig
+        if ig.token():
+            ig.publish(ig.teaser(video, 60),
+                       f"{outline['title']} | Poori {minutes} min ki kahani YouTube par\n\n"
+                       f"{data['hashtags']}")
+    except Exception as exc:
+        print("IG SKIP:", str(exc)[:200])
     if vid:
         state.pop("blocked_until", None)
         state["story_index"] = idx + 1

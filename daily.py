@@ -102,6 +102,11 @@ def main():
     with posts.open("a", encoding="utf-8") as f:
         f.write(f"{now.date()} {slot} | {vid} | {scene['file']}\n")
     state.pop("blocked_until", None)
+    try:
+        import ig
+        ig.publish(video, f"{data['title']}\n\n{data['hashtags']}\n\n{data['description'][:500]}")
+    except Exception as exc:
+        print("IG SKIP:", str(exc)[:200])
 
     if not vid:
         print("Auth missing — state advance nahi hua", file=sys.stderr)
