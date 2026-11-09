@@ -336,7 +336,8 @@ def main():
     if upload_blocked():
         print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
-    state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
+    story_state_path = ROOT / "story_state.json"
+    state = json.loads(story_state_path.read_text(encoding="utf-8")) if story_state_path.exists() else {}
     idx = state.get("story_index", 0)
     topic = TOPICS[idx % len(TOPICS)]
     outline, chapters = write_story(topic)
@@ -383,10 +384,8 @@ def main():
                        f"{data['hashtags']}")
     except Exception as exc:
         print("IG SKIP:", str(exc)[:200])
-    if vid:
-        state.pop("blocked_until", None)
-        state["story_index"] = idx + 1
-        (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    state["story_index"] = idx + 1
+    story_state_path.write_text(json.dumps(state), encoding="utf-8")
 
 
 if __name__ == "__main__":

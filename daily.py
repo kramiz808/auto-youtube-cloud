@@ -119,6 +119,7 @@ def main():
     with posts.open("a", encoding="utf-8") as f:
         f.write(f"{now.date()} {slot} | {vid} | {scene['file']}\n")
     state.pop("blocked_until", None)
+    pipeline.clear_blocked()
     try:
         import ig
         ig.publish(video, f"{data['title']}\n\n{data['hashtags']}\n\n{data['description'][:500]}")

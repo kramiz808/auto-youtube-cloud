@@ -38,7 +38,7 @@ def media_duration(path):
 
 def upload_blocked():
     """True jab tak YouTube ka daily upload quota reset na ho (midnight Pacific = 08:05 UTC)."""
-    path = ROOT / "state.json"
+    path = ROOT / "quota.json"
     if not path.exists():
         return False
     until = json.loads(path.read_text(encoding="utf-8")).get("blocked_until")
@@ -47,12 +47,18 @@ def upload_blocked():
 
 def mark_blocked(minutes=90):
     """Cap hit hone par thodi der ruko, poora din nahi — agla tick dobara try karega."""
-    path = ROOT / "state.json"
+    path = ROOT / "quota.json"
     state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     state["blocked_until"] = until.isoformat()
     path.write_text(json.dumps(state), encoding="utf-8")
     print("upload blocked till", until.isoformat())
+
+
+def clear_blocked():
+    path = ROOT / "quota.json"
+    if path.exists():
+        path.unlink()
 
 
 def get_creds(scopes=None):
