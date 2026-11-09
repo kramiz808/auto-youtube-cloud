@@ -45,16 +45,14 @@ def upload_blocked():
     return bool(until) and datetime.now(timezone.utc) < datetime.fromisoformat(until)
 
 
-def mark_blocked():
+def mark_blocked(minutes=90):
+    """Cap hit hone par thodi der ruko, poora din nahi — agla tick dobara try karega."""
     path = ROOT / "state.json"
     state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    now = datetime.now(timezone.utc)
-    reset = now.replace(hour=8, minute=5, second=0, microsecond=0)
-    if reset <= now:
-        reset += timedelta(days=1)
-    state["blocked_until"] = reset.isoformat()
+    until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    state["blocked_until"] = until.isoformat()
     path.write_text(json.dumps(state), encoding="utf-8")
-    print("upload blocked till", reset.isoformat())
+    print("upload blocked till", until.isoformat())
 
 
 def get_creds(scopes=None):

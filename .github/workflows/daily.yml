@@ -2,8 +2,13 @@ name: Daily AI Employee
 
 on:
   schedule:
-    - cron: '0 1-6,13-17 * * *'
+    - cron: '0 1-6,8,9,11-17 * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Ignore the slot guard and post now'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,6 +34,7 @@ jobs:
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
         run: python daily.py
 
       - name: Upload video artifact

@@ -18,7 +18,9 @@ def slot_now():
     hour = datetime.datetime.now(IST).hour
     if 6 <= hour < 13:
         return "morning"
-    if 18 <= hour < 23:
+    if 13 <= hour < 16:
+        return "afternoon"
+    if 16 <= hour < 20:
         return "evening"
     return None
 
@@ -51,15 +53,17 @@ def gemini_app(api_key):
 def main():
     import os
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
-    slot = slot_now()
-    if slot is None:
-        print("SKIP: posting window ke bahar (6am-1pm / 6pm-11pm IST)")
-        sys.exit(0)
-    if pipeline.upload_blocked():
-        print("SKIP: YouTube upload quota reset ka intezaar")
-        sys.exit(0)
+    force = os.environ.get("FORCE") == "1"
+    slot = slot_now() or "extra"
+    if not force:
+        if slot == "extra":
+            print("SKIP: posting window ke bahar (6am-8pm IST)")
+            sys.exit(0)
+        if pipeline.upload_blocked():
+            print("SKIP: YouTube upload quota reset ka intezaar")
+            sys.exit(0)
     posts = ROOT / "output" / "posts.txt"
-    if posts.exists() and f"{datetime.datetime.now(IST).date()} {slot}" in posts.read_text(encoding="utf-8"):
+    if not force and posts.exists() and f"{datetime.datetime.now(IST).date()} {slot}" in posts.read_text(encoding="utf-8"):
         print(f"SKIP: aaj ka {slot} post ho chuka")
         sys.exit(0)
     scene_list = reel.load_scenes()
