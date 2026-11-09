@@ -8,3 +8,5 @@ output/*.mp4
 today.json
 __pycache__/
 output/*.html
+
+secrets/
