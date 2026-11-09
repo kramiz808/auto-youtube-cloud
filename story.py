@@ -325,6 +325,25 @@ def split_upload(video, data):
     return first
 
 
+def already_on_channel(day):
+    """Aaj ki story channel par pehle se hai? Upload log se pata karo (double-post se bachao)."""
+    from googleapiclient.discovery import build
+    from pipeline import get_creds
+    creds = get_creds()
+    if creds is None:
+        return False
+    yt = build("youtube", "v3", credentials=creds)
+    ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
+    items = yt.playlistItems().list(
+        playlistId=ch["contentDetails"]["relatedPlaylists"]["uploads"],
+        part="snippet", maxResults=20).execute().get("items", [])
+    for it in items:
+        s = it.get("snippet", {})
+        if str(s.get("publishedAt", "")).startswith(day) and "Hindi Kahani" in s.get("title", ""):
+            return True
+    return False
+
+
 def main():
     import datetime
     from pipeline import mark_blocked, upload_blocked
@@ -332,6 +351,9 @@ def main():
     log = OUT / "stories.txt"
     if log.exists() and any(l.startswith(today) for l in log.read_text(encoding="utf-8").splitlines()):
         print("SKIP: aaj ki story already upload ho chuki hai")
+        sys.exit(0)
+    if already_on_channel(today):
+        print("SKIP: aaj ki story channel par already upload hai")
         sys.exit(0)
     if upload_blocked():
         print("SKIP: YouTube upload quota reset ka intezaar")

@@ -14,19 +14,20 @@ permissions:
   contents: write
 
 concurrency:
-  group: daily-posts
+  group: post-content
   cancel-in-progress: false
 
 jobs:
   daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - name: Posting window check
         id: win
         run: |
           hh=$(TZ=Asia/Kolkata date +%H)
           echo "IST hour: $hh"
+          echo "hour=$hh" >> "$GITHUB_OUTPUT"
           if [ "$hh" -ge 6 ] && [ "$hh" -le 20 ]; then
             echo "due=true" >> "$GITHUB_OUTPUT"
           else
@@ -57,6 +58,14 @@ jobs:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           FORCE: ${{ inputs.force && '1' || '0' }}
         run: python daily.py
+
+      - name: Run daily Hindi story (after 6 PM IST)
+        if: always() && steps.win.outputs.due == 'true' && steps.win.outputs.hour >= 18
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+        run: python story.py
 
       - name: Upload video artifact
         if: always() && (steps.win.outputs.due == 'true' || inputs.force == true)
