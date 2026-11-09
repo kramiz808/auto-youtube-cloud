@@ -401,6 +401,13 @@ def build(plan, slug):
     total = media_duration(joined)
 
     video = OUT / f"{slug}.mp4"
+    finish(joined, video)
+    print("TIMELINE:", json.dumps(timeline, ensure_ascii=False))
+    return video, total
+
+
+def finish(joined, video):
+    total = media_duration(joined)
     graph = (
         "[0:a]asplit=2[voc][key];"
         f"[1:a]volume=0.20,afade=t=in:st=0:d=3,afade=t=out:st={max(0, total - 5):.1f}:d=5[mus];"
@@ -412,8 +419,7 @@ def build(plan, slug):
          "-filter_complex", graph, "-map", "0:v", "-map", "[a]",
          "-t", f"{total:.3f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
          "-ar", "48000", "-movflags", "+faststart", video])
-    print("TIMELINE:", json.dumps(timeline, ensure_ascii=False))
-    return video, total
+    return video
 
 
 def already_on_channel(day, series):

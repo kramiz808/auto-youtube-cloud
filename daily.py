@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pipeline
 import reel
+import teaser
 import voice
 
 ROOT = Path(__file__).resolve().parent
@@ -61,25 +62,30 @@ def gemini_app(api_key):
 
 def post_slot(slot, today, state, run_no):
     """Ek slot ka short bana ke upload karo. Video id return, warna None."""
-    scene_list = reel.load_scenes()
-    scene = scene_list[run_no % len(scene_list)]
-    hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
-    titles = scene.get("titles") or [scene["title"]]
-    slug = f"{today}-{run_no % len(scene_list):02d}"
-
-    data = {k: scene[k] for k in ("description", "hashtags", "tags", "attribution")}
-    data["title"] = titles[(run_no // len(scene_list)) % len(titles)]
-    data["privacy"] = "public"
-    (ROOT / "today.json").write_text(
-        json.dumps({**data, "hook": hook, "file": scene["file"]}, ensure_ascii=False, indent=2),
-        encoding="utf-8")
-
+    slug = f"{today}-{run_no % 100:02d}"
+    label = "series-teaser"
     try:
-        video = reel.build_scene(scene, hook, slug)
-    except voice.VoiceUnavailable as exc:
-        print(f"SKIP: Hindi voice cache incomplete aur Gemini quota khatam ({exc}). "
-              f"State advance nahi hua — agla run retry karega.", file=sys.stderr)
-        return None
+        video, data = teaser.build(slug)
+    except Exception as exc:
+        print(f"teaser skip ({str(exc)[:120]}) — movie reel fallback")
+        video = None
+    if video is None:
+        scene_list = reel.load_scenes()
+        scene = scene_list[run_no % len(scene_list)]
+        hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
+        titles = scene.get("titles") or [scene["title"]]
+        data = {k: scene[k] for k in ("description", "hashtags", "tags", "attribution")}
+        data["title"] = titles[(run_no // len(scene_list)) % len(titles)]
+        data["privacy"] = "public"
+        label = scene["file"]
+        try:
+            video = reel.build_scene(scene, hook, slug)
+        except voice.VoiceUnavailable as exc:
+            print(f"SKIP: Hindi voice cache incomplete aur Gemini quota khatam ({exc}). "
+                  f"State advance nahi hua — agla run retry karega.", file=sys.stderr)
+            return None
+    (ROOT / "today.json").write_text(
+        json.dumps({**data, "slug": slug}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"VIDEO: {video}")
     try:
         vid = pipeline.upload(video, data)
@@ -95,9 +101,9 @@ def post_slot(slot, today, state, run_no):
     now = datetime.datetime.now(IST)
     posts = ROOT / "output" / "posts.txt"
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
-        f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
+        f.write(f"{today} | {label} | youtube_id={vid} | {video.name}\n")
     with posts.open("a", encoding="utf-8") as f:
-        f.write(f"{now.date()} {slot} | {vid} | {scene['file']}\n")
+        f.write(f"{now.date()} {slot} | {vid} | {label}\n")
     pipeline.clear_blocked()
     try:
         import ig
