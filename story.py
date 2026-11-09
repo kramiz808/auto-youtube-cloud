@@ -14,9 +14,11 @@ import voice
 
 SERIES = json.loads((ROOT / "series.json").read_text(encoding="utf-8"))
 CAST = {c["name"]: c for c in SERIES["cast"]}
-LIBRARY = json.loads((ROOT / "assets" / "library" / "manifest.json").read_text(encoding="utf-8"))
-TAGS = {m["tag"]: ROOT / m["file"] for m in LIBRARY}
-FACE = {m["tag"] for m in LIBRARY if m.get("face")}
+CHARS_DIR = ROOT / "assets" / "chars"
+BG_DIR = ROOT / "assets" / "bg"
+SLUG = {"सावित्री": "savitri", "आरव": "aarav", "मीरा": "meera", "रघुवीर": "raghuvir"}
+GHAR = {"home", "family", "phone", "mother", "woman", "sad-woman", "cry",
+        "man-thinking", "hospital", "rain"}
 
 PLAN_MODELS = ["gemini-flash-lite-latest", "gemini-3-flash-preview"]
 WRITE_MODELS = ["gemini-3-flash-preview", "gemini-flash-lite-latest"]
@@ -306,6 +308,79 @@ def make_gradient():
     return GRAD
 
 
+def emotion_key(text):
+    t = (text or "").lower()
+    for emo, words in (
+        ("angry", ("anger", "angry", "gussa", "furious", "shout", "irritat", "bitter", "taunt",
+                   "threat", "warn", "defian", "accus", "blame", "frustrat", "snap")),
+        ("scared", ("fear", "afraid", "scare", "worry", "anxious", "nervous", "panic", "dread",
+                    "whisper", "hesitat", "shock", "surprise", "tense", "tension", "uneas")),
+        ("sad", ("sad", "grief", "sorrow", "tear", "cry", "hurt", "guilt", "regret", "broken",
+                 "plead", "beg", "trembl", "pain", "loss", "mourn", "apolog", "heavy")),
+    ):
+        if any(w in t for w in words):
+            return emo
+    return "calm"
+
+
+def setting_group(setting):
+    return "ghar" if setting in GHAR else "gaon"
+
+
+def plate_for(setting):
+    name = "home"
+    if setting in ("village", "market"):
+        name = "chaupal"
+    elif setting in ("field", "sunrise", "sky", "road", "station"):
+        name = "field"
+    elif setting == "city-night":
+        name = "courtyard"
+    p = BG_DIR / f"{name}.jpg"
+    if p.exists():
+        return p
+    return next((q for q in sorted(BGS.glob("*.jpg"))), GRAD)
+
+
+def char_frame(speaker, emotion, group):
+    slug = SLUG.get(speaker)
+    if not slug:
+        return None
+    for emo in (emotion, "calm"):
+        p = CHARS_DIR / f"{slug}-{emo}-{group}.jpg"
+        if p.exists():
+            return p
+    return None
+
+
+def scene_video(scene, timings, dur, total, out):
+    group = setting_group(scene.get("setting", "home"))
+    plate = plate_for(scene.get("setting", "home"))
+    shots = [(plate, CARD)]
+    starts = [t[0] for t in timings]
+    for i, ln in enumerate(scene["lines"]):
+        end = starts[i + 1] if i + 1 < len(starts) else dur
+        frame = char_frame(ln["speaker"], emotion_key(ln.get("emotion", "")), group)
+        shots.append((frame or plate, max(0.3, end - starts[i])))
+    shots.append((plate, TAIL))
+    cmd = [FFMPEG, "-y"]
+    filters = []
+    for i, (still, sec) in enumerate(shots):
+        cmd += ["-loop", "1", "-t", f"{sec:.3f}", "-i", str(still)]
+        filters.append(
+            f"[{i}:v]crop=iw:ih*0.94:0:0,scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},setsar=1,fps={FPS},"
+            f"zoompan=z='min(1.16,1.03+0.0007*on)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d=1:s={W}x{H}:fps={FPS},format=yuv420p[v{i}]")
+    filters.append("".join(f"[v{i}]" for i in range(len(shots)))
+                   + f"concat=n={len(shots)}:v=1:a=0[v]")
+    cmd += ["-filter_complex", ";".join(filters), "-map", "[v]",
+            "-t", f"{total:.3f}", "-r", str(FPS),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p",
+            "-an", out]
+    run(cmd, cwd=WORK)
+    return out
+
+
 def render_piece(clip, wav, ass, duration, out, face=False, grain=True):
     shutil.copy(FONT, WORK / "dfont.ttf")
     make_gradient()
@@ -334,29 +409,19 @@ def render_piece(clip, wav, ass, duration, out, face=False, grain=True):
     return out
 
 
-def pick_clip(setting, used):
-    tag = setting if setting in TAGS else None
-    if tag is None or tag in used:
-        tag = next((t for t in SERIES["settings"] if t in TAGS and t not in used), None)
-    if tag is None:
-        tag = next((t for t in TAGS if t not in used), next(iter(TAGS)))
-    used.add(tag)
-    return TAGS[tag], tag in FACE
-
-
 def build(plan, slug):
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     drama = WORK / "drama"
     drama.mkdir(exist_ok=True)
-    used, pieces, timeline = set(), [], []
+    pieces, timeline = [], []
     models = voice.DRAMA_MODELS
 
     intro_wav = silence(INTRO, WORK / "intro.wav")
     intro_ass = card_ass(f"{SERIES['series']}\nएपिसोड {plan['episode']}", plan["title"],
                          INTRO, WORK / "intro.ass", big=True)
-    clip, face = pick_clip("sunrise", used)
-    pieces.append(render_piece(clip, intro_wav, intro_ass, INTRO, WORK / "p_intro.mp4", face, grain=False))
+    pieces.append(render_piece(plate_for("home"), intro_wav, intro_ass, INTRO,
+                               WORK / "p_intro.mp4", grain=False))
 
     for i, scene in enumerate(plan["scenes"]):
         scene["episode"] = plan["episode"]
@@ -383,16 +448,16 @@ def build(plan, slug):
             dur, timings = meta["duration"], [tuple(t) for t in meta["timings"]]
         total = CARD + dur + TAIL
         ass = scene_ass(scene, timings, total, WORK / f"sc{i:02d}.ass")
-        clip, face = pick_clip(scene.get("setting", ""), used)
-        pieces.append(render_piece(clip, wav, ass, total, WORK / f"p{i:02d}.mp4", face))
+        sv = scene_video(scene, timings, dur, total, WORK / f"sv{i:02d}.mp4")
+        pieces.append(render_piece(sv, wav, ass, total, WORK / f"p{i:02d}.mp4"))
         timeline.append({"card": scene["card"], "seconds": round(total, 1), "lines": len(scene["lines"])})
-        print(f"scene {i + 1}/{len(plan['scenes'])}: {total:.1f}s, {len(scene['lines'])} lines, {clip.stem}")
+        print(f"scene {i + 1}/{len(plan['scenes'])}: {total:.1f}s, {len(scene['lines'])} lines, {scene['card']}")
 
     outro_wav = silence(OUTRO, WORK / "outro.wav")
     outro_ass = card_ass(plan["next_question"], "अगला एपिसोड कल — चैनल सब्सक्राइब कर लो",
                          OUTRO, WORK / "outro.ass")
-    clip, face = pick_clip("city-night", used)
-    pieces.append(render_piece(clip, outro_wav, outro_ass, OUTRO, WORK / "p_outro.mp4", face, grain=False))
+    pieces.append(render_piece(plate_for("city-night"), outro_wav, outro_ass, OUTRO,
+                               WORK / "p_outro.mp4", grain=False))
 
     lst = WORK / "pieces.txt"
     lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in pieces), encoding="utf-8")
@@ -485,7 +550,7 @@ def main():
         "hashtags": f"#hindikahani #audiodrama #suspensestory #{SERIES['series'].replace(' ', '')}",
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", "family drama",
                  "kahaniyan", "hindi audio story", SERIES["series"], "emotional story"],
-        "attribution": "Footage: Mixkit free stock video (mixkit.co), royalty-free licence. "
+        "attribution": "Kirdar aur background: AI-generated original art. "
                        "Dialogue performed with Gemini TTS. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",

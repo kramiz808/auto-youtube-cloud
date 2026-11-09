@@ -4,8 +4,8 @@ import json
 
 import voice
 from pipeline import FFMPEG, OUT, WORK, media_duration, run
-from story import (CARD, TAIL, CAST, SERIES, card_ass, scene_ass, silence, pick_clip,
-                   render_piece, finish, gemini, as_json, repair, WRITE_MODELS)
+from story import (CARD, TAIL, CAST, SERIES, card_ass, scene_ass, silence, plate_for,
+                   scene_video, render_piece, finish, gemini, as_json, repair, WRITE_MODELS)
 
 HOOK, CTA = 4.0, 4.0
 
@@ -63,19 +63,16 @@ def build(slug):
          "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1", wav])
     total = CARD + dur + TAIL
 
-    used = set()
-    clip, face = pick_clip("rain", used)
     hook_ass = card_ass(hook, SERIES["tagline"], HOOK, WORK / "te_hook.ass", big=True)
-    pieces = [render_piece(clip, silence(HOOK, WORK / "te_hook.wav"), hook_ass, HOOK,
-                           WORK / "te_p0.mp4", face, grain=False)]
-    clip, face = pick_clip(scene.get("setting", "home"), used)
+    pieces = [render_piece(plate_for("home"), silence(HOOK, WORK / "te_hook.wav"), hook_ass,
+                           HOOK, WORK / "te_p0.mp4", grain=False)]
     ass = scene_ass(scene, timings, total, WORK / "te_sc.ass")
-    pieces.append(render_piece(clip, wav, ass, total, WORK / "te_p1.mp4", face))
-    clip, face = pick_clip("city-night", used)
+    sv = scene_video(scene, timings, dur, total, WORK / "te_sv.mp4")
+    pieces.append(render_piece(sv, wav, ass, total, WORK / "te_p1.mp4"))
     cta_ass = card_ass("पूरी कहानी चैनल पर", f"{SERIES['series']} — एपिसोड {ep} से शुरू करो",
                        CTA, WORK / "te_cta.ass")
-    pieces.append(render_piece(clip, silence(CTA, WORK / "te_cta.wav"), cta_ass, CTA,
-                               WORK / "te_p2.mp4", face, grain=False))
+    pieces.append(render_piece(plate_for("city-night"), silence(CTA, WORK / "te_cta.wav"),
+                               cta_ass, CTA, WORK / "te_p2.mp4", grain=False))
 
     plst = WORK / "te_pieces.txt"
     plst.write_text("".join(f"file '{p.as_posix()}'\n" for p in pieces), encoding="utf-8")
@@ -95,7 +92,7 @@ def build(slug):
         "hashtags": f"#hindikahani #audiodrama #suspensestory #{SERIES['series'].replace(' ', '')} #shorts",
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", SERIES["series"],
                  "kahaniyan", "emotional story", "shorts"],
-        "attribution": "Footage: Mixkit free stock video (mixkit.co), royalty-free licence. "
+        "attribution": "Kirdar aur background: AI-generated original art. "
                        "Dialogue performed with Gemini TTS. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
