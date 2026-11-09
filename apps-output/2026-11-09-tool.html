@@ -1,662 +1,322 @@
 <!DOCTYPE html>
 <html lang="hi">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>छात्र साथी - ऑल-इन-वन स्टडी टूल</title>
-<style>
-    :root {
-        --bg-color: #0f172a;
-        --card-bg: #1e293b;
-        --text-color: #f8fafc;
-        --text-muted: #94a3b8;
-        --accent: #3b82f6;
-        --accent-hover: #2563eb;
-        --border: #334155;
-        --danger: #ef4444;
-        --success: #22c55e;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>छात्र सहायक (Student Hub)</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --card: #1e1e1e;
+            --primary: #bb86fc;
+            --secondary: #03dac6;
+            --text: #e0e0e0;
+            --error: #cf6679;
+        }
 
-    * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    }
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { background: var(--bg); color: var(--text); margin: 0; padding-bottom: 70px; }
+        
+        .container { max-width: 600px; margin: auto; padding: 20px; }
+        .header { text-align: center; padding: 20px 0; border-bottom: 1px solid #333; }
+        
+        /* Navigation */
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--card); display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #333; z-index: 100; }
+        .nav-item { cursor: pointer; text-align: center; font-size: 12px; color: #888; flex: 1; }
+        .nav-item.active { color: var(--primary); }
+        .nav-item svg { width: 24px; height: 24px; display: block; margin: 0 auto 4px; fill: currentColor; }
 
-    body {
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-    }
+        /* Sections */
+        .section { display: none; animation: fadeIn 0.3s; }
+        .section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-    header {
-        background-color: var(--card-bg);
-        border-bottom: 1px solid var(--border);
-        padding: 1rem;
-        text-align: center;
-    }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        h2 { color: var(--primary); margin-top: 0; }
 
-    header h1 {
-        font-size: 1.5rem;
-        color: var(--accent);
-        margin-bottom: 0.25rem;
-    }
+        /* Timer */
+        .timer-display { font-size: 4rem; text-align: center; margin: 20px 0; font-weight: bold; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; }
+        button { background: var(--primary); border: none; padding: 10px 20px; border-radius: 5px; color: #000; font-weight: bold; cursor: pointer; }
+        button.secondary { background: var(--secondary); }
+        button.danger { background: var(--error); color: white; }
 
-    header p {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-    }
+        /* Notes & To-do */
+        textarea, input { width: 100%; background: #2c2c2c; border: 1px solid #444; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; background: #2c2c2c; padding: 10px; border-radius: 5px; margin-bottom: 8px; }
 
-    .nav-container {
-        display: flex;
-        overflow-x: auto;
-        background-color: var(--card-bg);
-        padding: 0.5rem;
-        gap: 0.5rem;
-        border-bottom: 1px solid var(--border);
-        white-space: nowrap;
-        scrollbar-width: none;
-    }
+        /* Calculator */
+        .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .calc-screen { grid-column: span 4; background: #000; padding: 15px; text-align: right; font-size: 1.5rem; border-radius: 5px; margin-bottom: 10px; min-height: 50px; }
 
-    .nav-container::-webkit-scrollbar {
-        display: none;
-    }
-
-    .nav-btn {
-        background: transparent;
-        border: none;
-        color: var(--text-muted);
-        padding: 0.6rem 1rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        transition: all 0.2s;
-    }
-
-    .nav-btn.active {
-        background-color: var(--accent);
-        color: white;
-    }
-
-    main {
-        flex: 1;
-        padding: 1rem;
-        max-width: 600px;
-        width: 100%;
-        margin: 0 auto;
-    }
-
-    .tool-section {
-        display: none;
-        background-color: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 1rem;
-        padding: 1.25rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-
-    .tool-section.active {
-        display: block;
-    }
-
-    h2 {
-        font-size: 1.25rem;
-        margin-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 0.5rem;
-    }
-
-    /* Common UI Elements */
-    input, textarea, select {
-        width: 100%;
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        color: var(--text-color);
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        margin-bottom: 0.75rem;
-        font-size: 0.95rem;
-    }
-
-    input:focus, textarea:focus, select:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-
-    button.action-btn {
-        background-color: var(--accent);
-        color: white;
-        border: none;
-        padding: 0.75rem 1rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-        font-size: 0.95rem;
-        font-weight: 600;
-        width: 100%;
-        transition: background-color 0.2s;
-        margin-bottom: 0.5rem;
-    }
-
-    button.action-btn:hover {
-        background-color: var(--accent-hover);
-    }
-
-    button.danger-btn {
-        background-color: var(--danger);
-    }
-
-    /* 1. Timer */
-    .timer-display {
-        font-size: 3rem;
-        text-align: center;
-        font-weight: bold;
-        margin: 1.5rem 0;
-        font-family: monospace;
-        color: var(--accent);
-    }
-
-    .timer-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    /* 2. Quiz */
-    .quiz-options {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .quiz-opt-btn {
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        color: var(--text-color);
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        text-align: left;
-        cursor: pointer;
-        transition: 0.2s;
-    }
-
-    .quiz-opt-btn:hover {
-        border-color: var(--accent);
-    }
-
-    /* 3. Flashcards */
-    .flashcard {
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        border-radius: 0.75rem;
-        height: 150px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        padding: 1rem;
-        font-size: 1.1rem;
-        cursor: pointer;
-        margin-bottom: 1rem;
-        user-select: none;
-    }
-
-    .fc-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    /* 4. Calculator */
-    .calc-screen {
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        font-size: 1.5rem;
-        padding: 1rem;
-        text-align: right;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-        min-height: 60px;
-        word-break: break-all;
-    }
-
-    .calc-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.5rem;
-    }
-
-    .calc-btn {
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        color: var(--text-color);
-        padding: 1rem;
-        font-size: 1.1rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-    }
-
-    .calc-btn:hover {
-        background-color: var(--border);
-    }
-
-    .calc-btn.op {
-        background-color: #334155;
-        color: var(--accent);
-        font-weight: bold;
-    }
-
-    /* 5. Timetable */
-    .tt-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background-color: var(--bg-color);
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        margin-bottom: 0.5rem;
-        border: 1px solid var(--border);
-    }
-
-    .tt-info h4 {
-        font-size: 1rem;
-    }
-
-    .tt-info p {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-
-    /* 6. Notes */
-    .note-item {
-        background-color: var(--bg-color);
-        border: 1px solid var(--border);
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .note-item h4 {
-        margin-bottom: 0.25rem;
-        font-size: 1rem;
-    }
-
-    .note-item p {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        white-space: pre-wrap;
-    }
-
-    .del-link {
-        color: var(--danger);
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-size: 0.8rem;
-        margin-top: 0.5rem;
-        display: inline-block;
-    }
-</style>
+        /* Flashcards */
+        .flashcard { perspective: 1000px; height: 200px; cursor: pointer; }
+        .flashcard-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d; }
+        .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
+        .front, .back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; border-radius: 12px; font-size: 1.2rem; padding: 20px; text-align: center; }
+        .front { background: #333; border: 2px solid var(--primary); }
+        .back { background: var(--primary); color: #000; transform: rotateY(180deg); }
+    </style>
 </head>
 <body>
 
-<header>
-    <h1>छात्र साथी</h1>
-    <p>आपका ऑल-इन-वन डिजिटल स्टडी टूल</p>
-</header>
+<div class="container">
+    <div class="header">
+        <h1>छात्र सहायक</h1>
+        <p id="current-date"></p>
+    </div>
 
-<div class="nav-container" id="navContainer">
-    <button class="nav-btn active" onclick="switchTool('timer')">⏱️ टाइमर</button>
-    <button class="nav-btn" onclick="switchTool('quiz')">❓ क्विज़</button>
-    <button class="nav-btn" onclick="switchTool('flashcards')">📇 फ़्लैशकार्ड</button>
-    <button class="nav-btn" onclick="switchTool('calc')">🧮 कैलकुलेटर</button>
-    <button class="nav-btn" onclick="switchTool('timetable')">📅 टाइमटेबल</button>
-    <button class="nav-btn" onclick="switchTool('notes')">📝 नोट्स</button>
+    <!-- Timer Section -->
+    <div id="timer" class="section active">
+        <div class="card">
+            <h2>⏱️ पढ़ाई टाइमर</h2>
+            <div class="timer-display" id="time-left">25:00</div>
+            <div class="btn-group">
+                <button onclick="toggleTimer()" id="timer-btn">शुरू करें</button>
+                <button class="secondary" onclick="resetTimer()">रीसेट</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notes Section -->
+    <div id="notes" class="section">
+        <div class="card">
+            <h2>📝 मेरे नोट्स</h2>
+            <textarea id="note-input" rows="5" placeholder="यहाँ कुछ लिखें..."></textarea>
+            <button onclick="saveNote()">नोट सेव करें</button>
+            <div id="saved-notes" style="margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <!-- Tasks Section -->
+    <div id="tasks" class="section">
+        <div class="card">
+            <h2>✅ टू-डू लिस्ट</h2>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="task-input" placeholder="नया काम जोड़ें...">
+                <button onclick="addTask()">+</button>
+            </div>
+            <div id="task-list"></div>
+        </div>
+    </div>
+
+    <!-- Calculator Section -->
+    <div id="calc" class="section">
+        <div class="card">
+            <h2>🔢 कैलकुलेटर</h2>
+            <div class="calc-screen" id="calc-display">0</div>
+            <div class="calc-grid">
+                <button class="danger" onclick="calcClear()">C</button>
+                <button class="secondary" onclick="calcInput('/')">÷</button>
+                <button class="secondary" onclick="calcInput('*')">×</button>
+                <button class="secondary" onclick="calcInput('-')">-</button>
+                <button onclick="calcInput('7')">7</button>
+                <button onclick="calcInput('8')">8</button>
+                <button onclick="calcInput('9')">9</button>
+                <button class="secondary" onclick="calcInput('+')">+</button>
+                <button onclick="calcInput('4')">4</button>
+                <button onclick="calcInput('5')">5</button>
+                <button onclick="calcInput('6')">6</button>
+                <button class="secondary" onclick="calcSolve()">=</button>
+                <button onclick="calcInput('1')">1</button>
+                <button onclick="calcInput('2')">2</button>
+                <button onclick="calcInput('3')">3</button>
+                <button onclick="calcInput('0')">0</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flashcards Section -->
+    <div id="flash" class="section">
+        <div class="card">
+            <h2>💡 फ्लैशकार्ड्स</h2>
+            <div class="flashcard" onclick="this.classList.toggle('flipped')">
+                <div class="flashcard-inner">
+                    <div class="front" id="fc-front">प्रश्न देखने के लिए क्लिक करें</div>
+                    <div class="back" id="fc-back">उत्तर यहाँ दिखेगा</div>
+                </div>
+            </div>
+            <div class="btn-group" style="margin-top:20px;">
+                <button class="secondary" onclick="prevFlashcard()">पीछे</button>
+                <button onclick="nextFlashcard()">अगला</button>
+            </div>
+        </div>
+    </div>
 </div>
 
-<main>
-    <!-- 1. Timer -->
-    <section id="timer" class="tool-section active">
-        <h2>पोमोडोरो स्टडी टाइमर</h2>
-        <div class="timer-display" id="timerDisplay">25:00</div>
-        <div class="timer-controls">
-            <button class="action-btn" id="startTimerBtn" onclick="toggleTimer()">शुरू करें</button>
-            <button class="action-btn danger-btn" onclick="resetTimer()">रीसेट</button>
-        </div>
-    </section>
-
-    <!-- 2. Quiz -->
-    <section id="quiz" class="tool-section">
-        <h2>सामान्य ज्ञान क्विज़</h2>
-        <div id="quizBox">
-            <p id="quizQuestion" style="margin-bottom: 1rem; font-weight: 500;"></p>
-            <div class="quiz-options" id="quizOptions"></div>
-            <p id="quizScore" style="text-align: center; font-weight: bold;"></p>
-            <button class="action-btn" id="nextQuizBtn" style="display:none;" onclick="nextQuiz()">अगला सवाल</button>
-        </div>
-    </section>
-
-    <!-- 3. Flashcards -->
-    <section id="flashcards" class="tool-section">
-        <h2>फ़्लैशकार्ड (पढ़ने के लिए क्लिक करें)</h2>
-        <div class="flashcard" id="flashcardEl" onclick="flipCard()">
-            सवाल लोड हो रहा है...
-        </div>
-        <div class="fc-controls">
-            <button class="action-btn" onclick="prevCard()">पिछلا</button>
-            <button class="action-btn" onclick="nextCard()">अगला</button>
-        </div>
-        <div style="margin-top: 1rem;">
-            <input type="text" id="newFcQ" placeholder="नया सवाल (Front)">
-            <input type="text" id="newFcA" placeholder="नया जवाब (Back)">
-            <button class="action-btn" onclick="addFlashcard()">फ़्लैशकार्ड जोड़ें</button>
-        </div>
-    </section>
-
-    <!-- 4. Calculator -->
-    <section id="calc" class="tool-section">
-        <h2>सादा कैलकुलेटर</h2>
-        <div class="calc-screen" id="calcScreen">0</div>
-        <div class="calc-grid">
-            <button class="calc-btn" onclick="calcClear()">C</button>
-            <button class="calc-btn" onclick="calcAppend('/')">/</button>
-            <button class="calc-btn" onclick="calcAppend('*')">*</button>
-            <button class="calc-btn" onclick="calcBack()">⌫</button>
-            <button class="calc-btn" onclick="calcAppend('7')">7</button>
-            <button class="calc-btn" onclick="calcAppend('8')">8</button>
-            <button class="calc-btn" onclick="calcAppend('9')">9</button>
-            <button class="calc-btn op" onclick="calcAppend('-')">-</button>
-            <button class="calc-btn" onclick="calcAppend('4')">4</button>
-            <button class="calc-btn" onclick="calcAppend('5')">5</button>
-            <button class="calc-btn" onclick="calcAppend('6')">6</button>
-            <button class="calc-btn op" onclick="calcAppend('+')">+</button>
-            <button class="calc-btn" onclick="calcAppend('1')">1</button>
-            <button class="calc-btn" onclick="calcAppend('2')">2</button>
-            <button class="calc-btn" onclick="calcAppend('3')">3</button>
-            <button class="calc-btn op" onclick="calcEval()">=</button>
-            <button class="calc-btn" onclick="calcAppend('0')" style="grid-column: span 2;">0</button>
-            <button class="calc-btn" onclick="calcAppend('.')">.</button>
-            <button class="calc-btn op" onclick="calcEval()">OK</button>
-        </div>
-    </section>
-
-    <!-- 5. Timetable -->
-    <section id="timetable" class="tool-section">
-        <h2>दैनिक टाइमटेबल</h2>
-        <input type="text" id="ttSubject" placeholder="विषय / काम का नाम">
-        <input type="text" id="ttTime" placeholder="समय (जैसे: 10:00 AM - 11:00 AM)">
-        <button class="action-btn" onclick="addTimetable()">टास्क जोड़ें</button>
-        <div id="ttList" style="margin-top: 1rem;"></div>
-    </section>
-
-    <!-- 6. Notes -->
-    <section id="notes" class="tool-section">
-        <h2>त्वरित नोट्स</h2>
-        <input type="text" id="noteTitle" placeholder="नोट का शीर्षक">
-        <textarea id="noteBody" rows="3" placeholder="यहाँ लिखें..."></textarea>
-        <button class="action-btn" onclick="addNote()">नोट सेव करें</button>
-        <div id="notesList" style="margin-top: 1rem;"></div>
-    </section>
-</main>
+<nav class="nav-bar">
+    <div class="nav-item active" onclick="showSection('timer', this)">
+        <svg viewBox="0 0 24 24"><path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" /></svg>
+        टाइमर
+    </div>
+    <div class="nav-item" onclick="showSection('notes', this)">
+        <svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>
+        नोट्स
+    </div>
+    <div class="nav-item" onclick="showSection('tasks', this)">
+        <svg viewBox="0 0 24 24"><path d="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M14,17H7V15H14V17M17,13H7V11H17V13M17,9H7V7H17V9Z" /></svg>
+        टू-डू
+    </div>
+    <div class="nav-item" onclick="showSection('calc', this)">
+        <svg viewBox="0 0 24 24"><path d="M7,2H17A2,2 0 0,1 19,4V20A2,2 0 0,1 17,22H7A2,2 0 0,1 5,20V4A2,2 0 0,1 7,2M7,4V8H17V4H7M7,10V12H9V10H7M11,10V12H13V10H11M15,10V12H17V10H15M7,14V16H9V14H7M11,14V16H13V14H11M15,14V18H17V14H15M7,18V20H9V18H7M11,18V20H13V18H11Z" /></svg>
+        कैलकुलेटर
+    </div>
+    <div class="nav-item" onclick="showSection('flash', this)">
+        <svg viewBox="0 0 24 24"><path d="M21,16.5C21,16.88 20.79,17.21 20.47,17.38L12.57,21.82C12.41,21.94 12.21,22 12,22C11.79,22 11.59,21.94 11.43,21.82L3.53,17.38C3.21,17.21 3,16.88 3,16.5V7.5C3,7.12 3.21,6.79 3.53,6.62L11.43,2.18C11.59,2.06 11.79,2 12,2C12.21,2 12.41,2.06 12.57,2.18L20.47,6.62C20.79,6.79 21,7.12 21,7.5V16.5Z" /></svg>
+        कार्ड्स
+    </div>
+</nav>
 
 <script>
     // Navigation
-    function switchTool(toolId) {
-        document.querySelectorAll('.tool-section').forEach(sec => sec.classList.remove('active'));
-        document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-        
-        document.getElementById(toolId).classList.add('active');
-        event.currentTarget.classList.add('active');
+    function showSection(id, el) {
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        el.classList.add('active');
     }
 
-    // 1. Timer Logic
-    let timerInterval;
+    // Date
+    const d = new Date();
+    const days = ["रविवार", "सोमवार", "मंगलवार", "बुधवार", "गुरुवार", "शुक्रवार", "शनिवार"];
+    document.getElementById('current-date').innerText = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} - ${days[d.getDay()]}`;
+
+    // Timer Logic
     let timeLeft = 25 * 60;
-    let timerRunning = false;
-
+    let timerId = null;
     function updateTimerDisplay() {
-        let mins = Math.floor(timeLeft / 60);
-        let secs = timeLeft % 60;
-        document.getElementById('timerDisplay').innerText = 
-            `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        document.getElementById('time-left').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-
     function toggleTimer() {
-        const btn = document.getElementById('startTimerBtn');
-        if (timerRunning) {
-            clearInterval(timerInterval);
-            timerRunning = false;
-            btn.innerText = "शुरू करें";
-            btn.style.backgroundColor = "var(--accent)";
+        if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+            document.getElementById('timer-btn').innerText = "शुरू करें";
         } else {
-            timerRunning = true;
-            btn.innerText = "रोकें";
-            btn.style.backgroundColor = "var(--danger)";
-            timerInterval = setInterval(() => {
+            timerId = setInterval(() => {
                 if (timeLeft > 0) {
                     timeLeft--;
                     updateTimerDisplay();
                 } else {
-                    clearInterval(timerInterval);
-                    alert("समय समाप्त! थोड़ा ब्रेक ले लें।");
-                    resetTimer();
+                    clearInterval(timerId);
+                    alert("समय समाप्त! थोड़ा ब्रेक लें।");
                 }
             }, 1000);
+            document.getElementById('timer-btn').innerText = "रोकें";
         }
     }
-
     function resetTimer() {
-        clearInterval(timerInterval);
-        timerRunning = false;
+        clearInterval(timerId);
+        timerId = null;
         timeLeft = 25 * 60;
         updateTimerDisplay();
-        const btn = document.getElementById('startTimerBtn');
-        btn.innerText = "शुरू करें";
-        btn.style.backgroundColor = "var(--accent)";
+        document.getElementById('timer-btn').innerText = "शुरू करें";
     }
 
-    // 2. Quiz Logic
-    const quizData = [
-        { q: "भारत की राजधानी क्या है?", options: ["मुंबई", "नई दिल्ली", "कोलकाता", "चेन्नई"], ans: 1 },
-        { q: "पृथ्वी के सबसे करीब कौन सा ग्रह है?", options: ["मंगल", "बुध", "शुक्र", "बृहस्पति"], ans: 2 },
-        { q: "कंप्यूटर का दिमाग किसे कहा जाता है?", options: ["CPU", "RAM", "Hard Disk", "Monitor"], ans: 0 },
-        { q: "भारत का राष्ट्रीय पक्षी कौन सा है?", options: ["कबूतर", "तोता", "मोर", "गोरेया"], ans: 2 },
-        { q: "पानी का रासायनिक सूत्र क्या है?", options: ["CO2", "H2O", "O2", "NaCl"], ans: 1 }
-    ];
-    let currentQuiz = 0;
-    let score = 0;
-
-    function loadQuiz() {
-        if (currentQuiz < quizData.length) {
-            let data = quizData[currentQuiz];
-            document.getElementById('quizQuestion').innerText = `${currentQuiz + 1}. ${data.q}`;
-            let optHTML = "";
-            data.options.forEach((opt, idx) => {
-                optHTML += `<button class="quiz-opt-btn" onclick="checkQuiz(${idx})">${opt}</button>`;
-            });
-            document.getElementById('quizOptions').innerHTML = optHTML;
-            document.getElementById('quizScore').innerText = "";
-            document.getElementById('nextQuizBtn').style.display = "none";
-        } else {
-            document.getElementById('quizQuestion').innerText = "क्वििज़ समाप्त!";
-            document.getElementById('quizOptions').innerHTML = "";
-            document.getElementById('quizScore').innerText = `आपका स्कोर: ${score} / ${quizData.length}`;
-            document.getElementById('nextQuizBtn').innerText = "दोबारा शुरू करें";
-            document.getElementById('nextQuizBtn').style.display = "block";
-            currentQuiz = -1;
-            score = 0;
-        }
+    // Notes Logic
+    function saveNote() {
+        const note = document.getElementById('note-input').value;
+        if (!note) return;
+        const notes = JSON.parse(localStorage.getItem('student_notes') || '[]');
+        notes.unshift({ text: note, date: new Date().toLocaleTimeString() });
+        localStorage.setItem('student_notes', JSON.stringify(notes));
+        document.getElementById('note-input').value = '';
+        displayNotes();
+    }
+    function displayNotes() {
+        const notes = JSON.parse(localStorage.getItem('student_notes') || '[]');
+        document.getElementById('saved-notes').innerHTML = notes.map((n, i) => `
+            <div class="list-item" style="flex-direction:column; align-items:start;">
+                <small>${n.date}</small>
+                <p style="margin:5px 0;">${n.text}</p>
+                <button class="danger" style="padding:2px 8px; font-size:10px;" onclick="deleteNote(${i})">मिटाएँ</button>
+            </div>
+        `).join('');
+    }
+    function deleteNote(i) {
+        const notes = JSON.parse(localStorage.getItem('student_notes'));
+        notes.splice(i, 1);
+        localStorage.setItem('student_notes', JSON.stringify(notes));
+        displayNotes();
     }
 
-    function checkQuiz(selected) {
-        let data = quizData[currentQuiz];
-        let buttons = document.querySelectorAll('.quiz-opt-btn');
-        if (selected === data.ans) {
-            buttons[selected].style.backgroundColor = "var(--success)";
-            score++;
-        } else {
-            buttons[selected].style.backgroundColor = "var(--danger)";
-            buttons[data.ans].style.backgroundColor = "var(--success)";
-        }
-        buttons.forEach(b => b.disabled = true);
-        document.getElementById('nextQuizBtn').style.display = "block";
+    // Tasks Logic
+    function addTask() {
+        const input = document.getElementById('task-input');
+        if (!input.value) return;
+        const tasks = JSON.parse(localStorage.getItem('student_tasks') || '[]');
+        tasks.push(input.value);
+        localStorage.setItem('student_tasks', JSON.stringify(tasks));
+        input.value = '';
+        displayTasks();
+    }
+    function displayTasks() {
+        const tasks = JSON.parse(localStorage.getItem('student_tasks') || '[]');
+        document.getElementById('task-list').innerHTML = tasks.map((t, i) => `
+            <div class="list-item">
+                <span>${t}</span>
+                <button class="danger" style="padding:5px;" onclick="deleteTask(${i})">✓</button>
+            </div>
+        `).join('');
+    }
+    function deleteTask(i) {
+        const tasks = JSON.parse(localStorage.getItem('student_tasks'));
+        tasks.splice(i, 1);
+        localStorage.setItem('student_tasks', JSON.stringify(tasks));
+        displayTasks();
     }
 
-    function nextQuiz() {
-        currentQuiz++;
-        loadQuiz();
-    }
-    loadQuiz();
-
-    // 3. Flashcards Logic
-    let flashcards = JSON.parse(localStorage.getItem('ss_fc')) || [
-        { q: "Photosynthesis क्या है?", a: "पौधों द्वारा सूर्य के प्रकाश से भोजन बनाना।" },
-        { q: "Newton का पहला नियम?", a: "जड़त्व का नियम (Law of Inertia)" }
-    ];
-    let fcIndex = 0;
-    let showingFront = true;
-
-    function renderFlashcard() {
-        const fc = document.getElementById('flashcardEl');
-        if (flashcards.length === 0) {
-            fc.innerText = "कोई फ़्लैशकार्ड नहीं है। नीचे से जोड़ें।";
-            return;
-        }
-        fc.innerText = showingFront ? flashcards[fcIndex].q : flashcards[fcIndex].a;
-    }
-
-    function flipCard() {
-        if (flashcards.length === 0) return;
-        showingFront = !showingFront;
-        renderFlashcard();
-    }
-
-    function nextCard() {
-        if (flashcards.length === 0) return;
-        fcIndex = (fcIndex + 1) % flashcards.length;
-        showingFront = true;
-        renderFlashcard();
-    }
-
-    function prevCard() {
-        if (flashcards.length === 0) return;
-        fcIndex = (fcIndex - 1 + flashcards.length) % flashcards.length;
-        showingFront = true;
-        renderFlashcard();
-    }
-
-    function addFlashcard() {
-        let q = document.getElementById('newFcQ').value;
-        let a = document.getElementById('newFcA').value;
-        if(q && a) {
-            flashcards.push({q, a});
-            localStorage.setItem('ss_fc', JSON.stringify(flashcards));
-            document.getElementById('newFcQ').value = '';
-            document.getElementById('newFcA').value = '';
-            renderFlashcard();
-            alert("फ़्लैशकार्ड जुड़ गया!");
-        }
-    }
-    renderFlashcard();
-
-    // 4. Calculator Logic
+    // Calculator Logic
     let calcVal = "";
-    function calcAppend(val) {
-        if(calcVal === "0" && val !== ".") calcVal = "";
-        calcVal += val;
-        document.getElementById('calcScreen').innerText = calcVal || "0";
+    function calcInput(v) { 
+        calcVal += v; 
+        document.getElementById('calc-display').innerText = calcVal; 
     }
-    function calcClear() {
-        calcVal = "";
-        document.getElementById('calcScreen').innerText = "0";
+    function calcClear() { 
+        calcVal = ""; 
+        document.getElementById('calc-display').innerText = "0"; 
     }
-    function calcBack() {
-        calcVal = calcVal.slice(0, -1);
-        document.getElementById('calcScreen').innerText = calcVal || "0";
-    }
-    function calcEval() {
+    function calcSolve() {
         try {
             calcVal = eval(calcVal).toString();
-            document.getElementById('calcScreen').innerText = calcVal;
+            document.getElementById('calc-display').innerText = calcVal;
         } catch {
-            document.getElementById('calcScreen').innerText = "गलत इनपुट";
+            document.getElementById('calc-display').innerText = "Error";
             calcVal = "";
         }
     }
 
-    // 5. Timetable Logic
-    let timetable = JSON.parse(localStorage.getItem('ss_tt')) || [];
-
-    function renderTimetable() {
-        let list = document.getElementById('ttList');
-        list.innerHTML = "";
-        timetable.forEach((item, index) => {
-            list.innerHTML += `
-                <div class="tt-item">
-                    <div class="tt-info">
-                        <h4>${item.subject}</h4>
-                        <p>⏰ ${item.time}</p>
-                    </div>
-                    <button class="del-link" onclick="delTimetable(${index})">हटाएं</button>
-                </div>`;
-        });
+    // Flashcards Logic
+    const flashcards = [
+        { q: "भारतीय संविधान के जनक कौन हैं?", a: "डॉ. बी.आर. अंबेडकर" },
+        { q: "प्रकाश संश्लेषण (Photosynthesis) क्या है?", a: "पौधों द्वारा सूर्य के प्रकाश से भोजन बनाने की प्रक्रिया" },
+        { q: "H2O का रासायनिक नाम क्या है?", a: "पानी (Water)" },
+        { q: "सबसे छोटा अभाज्य संख्या (Prime Number) कौन सा है?", a: "2" }
+    ];
+    let currentFC = 0;
+    function updateFC() {
+        const card = document.querySelector('.flashcard');
+        card.classList.remove('flipped');
+        setTimeout(() => {
+            document.getElementById('fc-front').innerText = flashcards[currentFC].q;
+            document.getElementById('fc-back').innerText = flashcards[currentFC].a;
+        }, 200);
+    }
+    function nextFlashcard() {
+        currentFC = (currentFC + 1) % flashcards.length;
+        updateFC();
+    }
+    function prevFlashcard() {
+        currentFC = (currentFC - 1 + flashcards.length) % flashcards.length;
+        updateFC();
     }
 
-    function addTimetable() {
-        let subject = document.getElementById('ttSubject').value;
-        let time = document.getElementById('ttTime').value;
-        if(subject && time) {
-            timetable.push({subject, time});
-            localStorage.setItem('ss_tt', JSON.stringify(timetable));
-            document.getElementById('ttSubject').value = '';
-            document.getElementById('ttTime').value = '';
-            renderTimetable();
-        }
-    }
-
-    function delTimetable(index) {
-        timetable.splice(index, 1);
-        localStorage.setItem('ss_tt', JSON.stringify(timetable));
-        renderTimetable();
-    }
-    renderTimetable();
-
-    // 6. Notes Logic
-    let notes = JSON.parse(localStorage.getItem('ss_notes')) || [];
-
-    function renderNotes() {
-        let list = document.getElementById('notesList');
-        list.innerHTML = "";
-        notes.forEach((note, index) => {
-            list.innerHTML += `
-                <div class="note-item">
-                    <h4>${note.title}</h4>
-                    <p>${note.body}</p>
-                    <button class="del-link" onclick="delNote(${index})">डिलीट करें</button>
-                </div>`;
-        });
-    }
-
-    function addNote() {
-        let title = document.getElementById('noteTitle').value;
-        let body = document.getElementById('noteBody').value;
-        if(title || body) {
-            notes.push({title: title || "बिना शीर्षक", body});
-            localStorage.setItem('ss_notes', JSON.stringify(notes));
-            document.getElementById('noteTitle').value = '';
-            document.getElementById('noteBody').value = '';
-            renderNotes();
-        }
-    }
-
-    function delNote(index) {
-        notes.splice(index, 1);
-        localStorage.setItem('ss_notes', JSON.stringify(notes));
-        renderNotes();
-    }
-    renderNotes();
+    // Initialize
+    displayNotes();
+    displayTasks();
+    updateFC();
 </script>
 
 </body>

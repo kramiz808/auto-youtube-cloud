@@ -19,3 +19,4 @@
 2026-11-08 | assets/scenes/sintel_02.mp4 | hook=A movie scene that will melt your heart | youtube_id=rbPo8V7gUzo | 2026-11-08-00.mp4
 2026-11-09 | assets/scenes/sintel_02.mp4 | hook=जो बेसहारा था, उसने मेरी ज़िंदगी बदल दी | youtube_id=MYE3qvaLTiY | 2026-11-09-00.mp4
 2026-11-09 | assets/scenes/sintel_01.mp4 | hook=जिसका कोई नहीं होता, वो सबसे ज़्यादा लड़ता है | youtube_id=TalZJb8hi-g | 2026-11-09-01.mp4
+2026-11-09 | assets/scenes/sintel_03.mp4 | hook=तुम हारे नहीं, बस मंज़िल के पास थे | youtube_id=XPXP-_c2xXI | 2026-11-09-02.mp4
