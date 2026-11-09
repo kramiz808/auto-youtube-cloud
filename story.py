@@ -1,46 +1,34 @@
-"""Daily 20-25 min Hindi audio-story video: Gemini script, edge narration, blurred backdrop, burned subs."""
+"""Rozana Hindi audio-drama: recurring cast, characters aapas mein bolte hain, har scene ka alag footage."""
+import datetime
 import json
 import re
+import shutil
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-from pipeline import FFMPEG, ROOT, WORK, OUT, media_duration, run
+from pipeline import FFMPEG, OUT, ROOT, WORK, media_duration, run
+import voice
 
-MODEL = "gemini-flash-lite-latest"
-VOICE = "hi-IN-MadhurNeural"
-RATE = "-6%"
-W, H, FPS = 1080, 1920, 24
-INTRO, OUTRO, GAP = 5.0, 6.0, 0.18
-CHUNK = 80
-BG = ROOT / "assets" / "story" / "bg.mp4"
+SERIES = json.loads((ROOT / "series.json").read_text(encoding="utf-8"))
+CAST = {c["name"]: c for c in SERIES["cast"]}
+LIBRARY = json.loads((ROOT / "assets" / "library" / "manifest.json").read_text(encoding="utf-8"))
+TAGS = {m["tag"]: ROOT / m["file"] for m in LIBRARY}
+FACE = {m["tag"] for m in LIBRARY if m.get("face")}
+
+PLAN_MODELS = ["gemini-flash-lite-latest", "gemini-3-flash-preview"]
+WRITE_MODELS = ["gemini-3-flash-preview", "gemini-flash-lite-latest"]
 MUSIC = ROOT / "assets" / "music" / "soft.mp3"
 FONT = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
-PARTS = 3
+GRAD = ROOT / "assets" / "story" / "grad.png"
 
-TOPICS = [
-    "maa ka woh jhooth jo sach se bada tha",
-    "do bhai aur pitaji ki purani diary",
-    "gareebi mein pali behen aur uski padhai",
-    "chhoti si dukaan aur zameer ka imtihaan",
-    "gaon se shehar aaya ladka aur wada",
-    "shaadi ke baad pehli raat ka faisla",
-    "purane dost ka dhokha aur maafi",
-    "naukri, ijjat aur pitaji ka sapna",
-    "ek befikra ladki aur uski maa ki bimari",
-    "chachaji ki jaydaad aur bhai ka pyar",
-    "gareeb chai wale ka beta aur exam",
-    "ek khoya hua bachpan aur purani tasveer",
-    "pehla pyaar, pehla intezaar, aakhri faisla",
-    "chor ki maa aur uski himmat",
-    "zameen ka jhagda aur bhai-behen",
-    "hospital ki seedhi aur aadhi raat ka faisla",
-    "namaaz kabooliyat aur maafi ka rasta",
-    "ek taxiwala aur uski beemar biwi",
-    "sacchai bolne wali chhoti behen",
-    "retire hote pitaji ka aakhri din",
-]
+W, H, FPS = 1080, 1920, 24
+CARD, TAIL = 2.8, 0.8
+INTRO, OUTRO = 7.0, 9.0
+SCENES = 10
+CHARS_PER_SCENE = (780, 1050)
 
 
 def key():
@@ -51,152 +39,165 @@ def key():
     return os.environ.get("GEMINI_API_KEY", "").strip()
 
 
-def gemini(prompt, temperature=1.0):
+def gemini(prompt, models, temperature=1.0):
     body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"temperature": temperature}}).encode("utf-8")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={key()}"
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                data = json.loads(resp.read())
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception as exc:
-            print("gemini text retry", attempt + 1, str(exc)[:120])
-            time.sleep(20 * (attempt + 1))
-    raise RuntimeError("story text fail")
+                       "generationConfig": {"temperature": temperature,
+                                            "maxOutputTokens": 16000}}).encode("utf-8")
+    last = ""
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key()}"
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+                resp = json.loads(urllib.request.urlopen(req, timeout=240).read())
+                return resp["candidates"][0]["content"]["parts"][0]["text"]
+            except urllib.error.HTTPError as exc:
+                last = f"{exc.code} {exc.read()[:160].decode('utf-8', 'replace')}"
+                print("gemini", model, last[:140])
+                if exc.code in (400, 404):
+                    break
+                time.sleep(15 * (attempt + 1))
+            except Exception as exc:
+                last = str(exc)[:160]
+                print("gemini retry", model, last)
+                time.sleep(15 * (attempt + 1))
+    raise RuntimeError(f"story text fail: {last}")
 
 
 def as_json(text):
     text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
     start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise RuntimeError("model ne JSON nahi diya")
     return json.loads(text[start:end + 1])
 
 
-def make_outline(topic):
+def devanagari_ratio(text):
+    letters = re.findall(r"[A-Za-z\u0900-\u097F]", text)
+    if not letters:
+        return 0.0
+    return sum(1 for c in letters if "\u0900" <= c <= "\u097F") / len(letters)
+
+
+def cast_block():
+    return "\n".join(
+        f"- {c['name']} ({c['role']}, umr {c['age']}): {c['knows']}" for c in SERIES["cast"])
+
+
+def plan_episode(ep, revealed):
+    beat = SERIES["arc"][(ep - 1) % len(SERIES["arc"])]
     prompt = (
-        "Tum ek pro Hindi story writer ho. Ek 20-25 minute ki audio story (sunne wali kahani) ka outline banao.\n"
-        f"Topic: {topic}\n"
-        "Audience: 18-45 saal ke Indian, rishton wali emotional kahaniyan pasand karte hain.\n"
-        "Rules: pehle 30 second ka strong hook, 14 chapters, beech mein ek bada twist, climax emotional, "
-        "ending sachchai wali (jhoothi khushi nahi), aur ek seedha moral. Kahani believable ho, filmy melodrama nahi.\n"
-        "SIRF JSON do: {\"title\":\"...\",\"hook\":\"...\",\"moral\":\"...\",\"chapters\":[{\"name\":\"...\",\"beat\":\"...\"}]}"
+        f"Tum ek professional Hindi audio-drama showrunner ho. Series: \"{SERIES['series']}\".\n"
+        f"Premise: {SERIES['premise']}\nTone: {SERIES['tone']}\n\nCharacters:\n{cast_block()}\n\n"
+        f"Ab EPISODE {ep} likhna hai. Is episode ka beat: {beat['beat']}\n"
+        f"Is episode ke ant mein darshak ke mann mein ye sawaal rehna chahiye: {beat['question']}\n"
+        f"Pichhle episodes mein ye sach saamne aa chuke hain (inhein dohrao mat, aage badhao): "
+        f"{revealed or 'koi nahi — ye pehla episode hai'}\n\n"
+        "Sakht niyam:\n"
+        "1. Koi narrator/sutradhar nahi. Sirf characters ke dialogue. Mahaul batane ke liye har scene mein ek chhota 'card' text hoga.\n"
+        f"2. Kul {SCENES} scenes. Har scene mein sirf 1 ya 2 characters bolein (teesra kabhi nahi).\n"
+        "3. Scene 1 = cold open: kahani ka sabse tense pal, beech se shuru. Baaki scenes chronological.\n"
+        f"4. Har scene mein 8 se 14 dialogue lines, kul {CHARS_PER_SCENE[0]}-{CHARS_PER_SCENE[1]} akshar. Chhote vakya, beech mein kaatna, chuppi.\n"
+        "5. Aakhri scene cliffhanger ho — koi bada sawaal khula chhodo, jawab mat do.\n"
+        "6. Sab kuch shuddh Devanagari Hindi mein. Roman/English akshar bilkul nahi.\n"
+        f"7. Har scene ka 'setting' inmein se ek ho: {', '.join(SERIES['settings'])}\n\n"
+        "Sirf JSON do:\n"
+        '{"title":"...","logline":"...","scenes":[{"card":"jagah — samay","setting":"home","speakers":["आरव","सावित्री"],"beat":"is scene mein kya hota hai"}],'
+        '"reveal":"is episode mein kya naya sach saamne aaya","cliffhanger":"aakhri adhoora pal","next_question":"agle episode ka sawaal"}'
     )
-    return as_json(gemini(prompt))
+    plan = as_json(gemini(prompt, PLAN_MODELS, 1.0))
+    plan["scenes"] = plan["scenes"][:SCENES]
+    plan["episode"] = ep
+    return plan
 
 
-def write_part(outline, start, end, tail):
-    names = [c["name"] for c in outline["chapters"][start:end]]
+def write_batch(plan, indices, tail):
+    names = [c["name"] for c in SERIES["cast"]]
+    wanted = [plan["scenes"][i] for i in indices]
     prompt = (
-        "Hindi story ka outline:\n" + json.dumps(outline, ensure_ascii=False) + "\n\n"
-        f"Ab in chapters ko poora likho: {', '.join(names)}.\n"
-        "Har chapter 200-220 shabd, bolne layak natural Hindi, chhote dialogue allowed, "
-        "koi heading/numbering text ke andar nahi. Repeat mat karo.\n"
-        f"Pichhle chapter ka aakhri hissa (continuity ke liye): {tail}\n"
-        "SIRF JSON do: {\"chapters\":[{\"name\":\"...\",\"text\":\"...\"}]}"
+        f"Series \"{SERIES['series']}\" — {SERIES['premise']}\nTone: {SERIES['tone']}\n"
+        f"Characters (naam bilkul yahi rakho): {', '.join(names)}\n{cast_block()}\n\n"
+        f"Episode {plan['episode']} ka plan:\n"
+        + json.dumps({k: plan[k] for k in ("title", "logline", "reveal", "cliffhanger", "next_question")},
+                     ensure_ascii=False)
+        + "\n\nAb in scenes ke poore dialogue likho (isi kram mein):\n"
+        + json.dumps(wanted, ensure_ascii=False)
+        + f"\n\nPichhla scene ka ant (continuity): {tail}\n\n"
+        "Sakht niyam:\n"
+        "- Sirf wahi 1-2 speakers jo scene ke 'speakers' mein diye hain. Naam ki spelling bilkul waisi hi.\n"
+        "- Har line 4 se 22 shabd. Asli bolchaal ki Hindi, kitabi nahi. Taana, chuppi, beech mein kaatna — sab chalega.\n"
+        "- Har scene mein 8-14 lines aur kul 780-1050 akshar. Kam mat likho.\n"
+        "- Koi narration, koi stage direction bracket mein nahi, koi English shabd nahi. Sirf Devanagari.\n"
+        "- Jaankari dialogue se bahar aaye, summary se nahi. Koi kirdar apna parichay nahi dega.\n\n"
+        'Sirf JSON do: {"scenes":[{"lines":[{"speaker":"naam","text":"...","emotion":"is line ka bhaav, English mein ek chhota phrase"}]}]}'
     )
-    return as_json(gemini(prompt, 0.9))["chapters"]
+    got = as_json(gemini(prompt, WRITE_MODELS, 0.95))["scenes"]
+    out = []
+    for i, scene in enumerate(wanted):
+        lines = got[i]["lines"] if i < len(got) else []
+        out.append(dict(scene, lines=lines))
+    return out
 
 
-def word_count(text):
-    return len(re.findall(r"\S+", text))
+def repair(scene):
+    allowed = [s for s in scene.get("speakers", []) if s in CAST]
+    fallback = allowed[0] if allowed else SERIES["cast"][0]["name"]
+    lines = []
+    for ln in scene.get("lines", []):
+        sp = ln.get("speaker", "")
+        if sp not in CAST:
+            sp = next((a for a in allowed if a[:2] == sp[:2]), fallback)
+        text = re.sub(r"\s+", " ", str(ln.get("text", ""))).strip()
+        text = re.sub(r"[\(\[].*?[\)\]]", "", text).strip()
+        if not text or devanagari_ratio(text) < 0.75:
+            continue
+        lines.append({"speaker": sp, "text": text, "emotion": str(ln.get("emotion", ""))[:160]})
+    speakers = list(dict.fromkeys(l["speaker"] for l in lines))
+    if len(speakers) > 2:
+        keep = speakers[:2]
+        lines = [dict(l, speaker=keep[0]) if l["speaker"] not in keep else l for l in lines]
+    scene["lines"] = lines
+    scene["speakers"] = list(dict.fromkeys(l["speaker"] for l in lines))
+    scene["chars"] = sum(len(re.sub(r"\s+", "", l["text"])) for l in lines)
+    return scene
 
 
-def expand_short(outline, chapters):
-    short = [c for c in chapters if word_count(c["text"]) < 180]
-    if not short:
-        return chapters
-    payload = [{"name": c["name"], "text": c["text"]} for c in short[:6]]
+def grow(scene, plan):
     prompt = (
-        "Ye Hindi story ke adhoore chapters hain. Har chapter ko 200-220 shabd ka poora karo. "
-        "Same kahani, same characters, bas detail aur dialogue add karo. Kuch naya twist mat jodo.\n"
-        + json.dumps({"outline": outline, "chapters": payload}, ensure_ascii=False)
-        + "\nSIRF JSON do: {\"chapters\":[{\"name\":\"...\",\"text\":\"...\"}]}"
+        f"Series \"{SERIES['series']}\". Is scene ke dialogue bahut chhote hain ({scene['chars']} akshar). "
+        f"Inhein badhakar 850-1000 akshar karo. Wahi {scene['speakers']} speakers, wahi baat, bas aur gehri behas, "
+        "chhote vakya, beech mein kaatna, aur asli bhaav jodo. Naya twist mat jodo. Sirf Devanagari.\n"
+        + json.dumps({"scene": scene, "plan_title": plan["title"]}, ensure_ascii=False)
+        + '\nSirf JSON: {"lines":[{"speaker":"...","text":"...","emotion":"..."}]}'
     )
     try:
-        fixed = {c["name"]: c["text"] for c in as_json(gemini(prompt, 0.8))["chapters"]}
+        scene["lines"] = as_json(gemini(prompt, WRITE_MODELS, 0.9))["lines"]
     except Exception as exc:
-        print("expand skip:", str(exc)[:100])
-        return chapters
-    return [dict(c, text=fixed.get(c["name"], c["text"])) for c in chapters]
+        print("grow skip:", str(exc)[:100])
+    return repair(scene)
 
 
-def write_story(topic):
-    outline = make_outline(topic)
-    print("outline:", outline["title"], "|", len(outline["chapters"]), "chapters")
-    chapters = []
-    per = (len(outline["chapters"]) + PARTS - 1) // PARTS
-    for i in range(0, len(outline["chapters"]), per):
-        part = write_part(outline, i, min(i + per, len(outline["chapters"])),
-                          chapters[-1]["text"][-400:] if chapters else outline["hook"])
-        chapters.extend(part)
-        print("part", i // per + 1, "->", len(part), "chapters")
-    chapters = expand_short(outline, chapters)
-    total_words = sum(word_count(c["text"]) for c in chapters)
-    print("words:", total_words, "~", round(total_words / 140, 1), "min")
-    if total_words < 2200:
-        raise RuntimeError(f"story too short: {total_words} words")
-    return outline, chapters
-
-
-def chunks_of(text):
-    out = []
-    for sentence in re.split(r"(?<=[।?!.])\s+", text.strip()):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        if len(sentence) <= CHUNK:
-            out.append(sentence)
-            continue
-        cur = ""
-        for word in sentence.split():
-            if len(cur) + len(word) + 1 > CHUNK:
-                out.append(cur)
-                cur = word
-            else:
-                cur = (cur + " " + word).strip()
-        if cur:
-            out.append(cur)
-    merged = []
-    for piece in out:
-        if merged and len(merged[-1]) + len(piece) + 1 <= CHUNK:
-            merged[-1] = merged[-1] + " " + piece
-        else:
-            merged.append(piece)
-    return merged
-
-
-async def _tts(text, path):
-    import edge_tts
-    await edge_tts.Communicate(text, VOICE, rate=RATE).save(str(path))
-
-
-def narrate(chunks):
-    import asyncio
-    wavs = []
-    for i, text in enumerate(chunks):
-        mp3 = WORK / f"n_{i:03d}.mp3"
-        wav = WORK / f"n_{i:03d}.wav"
-        for attempt in range(3):
-            try:
-                asyncio.run(_tts(text, mp3))
-                run([FFMPEG, "-y", "-i", mp3, "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", wav])
-                break
-            except Exception as exc:
-                print("tts retry", i, attempt + 1, str(exc)[:80])
-                time.sleep(3)
-        else:
-            raise RuntimeError(f"tts fail chunk {i}")
-        wavs.append(wav)
-        if i % 20 == 0:
-            print("tts", i, "/", len(chunks))
-    return wavs
-
-
-def silence(seconds, path):
-    run([FFMPEG, "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
-         "-t", f"{seconds:.3f}", "-c:a", "pcm_s16le", path])
-    return path
+def write_episode(ep, revealed):
+    plan = plan_episode(ep, revealed)
+    print("PLAN:", plan["title"], "|", len(plan["scenes"]), "scenes")
+    scenes, tail = [], plan["logline"]
+    for start in range(0, len(plan["scenes"]), 3):
+        idx = list(range(start, min(start + 3, len(plan["scenes"]))))
+        for scene in write_batch(plan, idx, tail[-500:]):
+            scene = repair(scene)
+            if scene["chars"] < 620:
+                scene = grow(scene, plan)
+            if not scene["lines"]:
+                raise RuntimeError(f"scene {len(scenes) + 1} khaali hai")
+            scenes.append(scene)
+            tail = scene["lines"][-1]["text"]
+        print("scenes written:", len(scenes), "chars:", sum(s["chars"] for s in scenes))
+    plan["scenes"] = scenes
+    total = sum(s["chars"] for s in scenes)
+    print("total chars:", total, "~", round(total / 8.5 / 60, 1), "min dialogue")
+    if total < 5200:
+        raise RuntimeError(f"episode bahut chhota: {total} akshar")
+    return plan
 
 
 def ass_time(t):
@@ -204,11 +205,15 @@ def ass_time(t):
     return f"{h}:{m:02d}:{t % 60:05.2f}"
 
 
-def ass_text(text):
+def ass_escape(text):
     return text.replace("{", "(").replace("}", ")")
 
 
-def wrap_lines(text, width=40, max_lines=3):
+def ass_lines(text, width, max_lines):
+    return "\\N".join(ass_escape(l) for l in wrap(text, width, max_lines))
+
+
+def wrap(text, width=30, max_lines=3):
     lines, cur = [], ""
     for word in text.split():
         if len(cur) + len(word) + 1 > width:
@@ -218,115 +223,200 @@ def wrap_lines(text, width=40, max_lines=3):
             cur = (cur + " " + word).strip()
     if cur:
         lines.append(cur)
-    return lines[:max_lines]
+    return lines[:max_lines] or [""]
 
 
-def build_ass(events, title, hook, total, path):
-    head = """[Script Info]
+def ass_color(hex_rgb):
+    r, g, b = hex_rgb[0:2], hex_rgb[2:4], hex_rgb[4:6]
+    return f"&H00{b}{g}{r}&"
+
+
+ASS_HEAD = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 WrapStyle: 2
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,Mukta,58,&H00FFFFFF,&H00FFFFFF,&H00121212,&H90000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,380,1
-Style: Card,Mukta,74,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,5,2,5,90,90,0,1
-Style: Small,Mukta,46,&HD0D0D0D0,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,2,2,80,80,300,1
+Style: Sub,Mukta,60,&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,4,2,2,70,70,185,1
+Style: Name,Mukta,44,&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,3,2,5,60,60,0,1
+Style: Card,Mukta,66,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,80,80,0,1
+Style: Big,Mukta,86,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,5,70,70,0,1
+Style: Tiny,Mukta,32,&H00C8C8C8,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,8,60,60,54,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    lines = [head]
-    card = "\\N".join(wrap_lines(title, 18, 3))
-    lines.append(f"Dialogue: 0,0:00:00.00,0:00:0{int(INTRO)-1}.00,Card,,0,0,0,,{{\\fad(400,300)}}{ass_text(card)}")
-    sub = "\\N".join(wrap_lines(hook, 26, 2))
-    lines.append(f"Dialogue: 0,0:00:02.00,0:00:0{int(INTRO)}.00,Small,,0,0,0,,{{\\fad(300,200)}}{ass_text(sub)}")
-    for start, end, text in events:
-        body = "\\N".join(wrap_lines(text, 40, 3))
-        lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Sub,,0,0,0,,{ass_text(body)}")
-    thanks = "\\N".join(wrap_lines("कल की नई कहानी के लिए सब्सक्राइब करना मत भूलना", 20, 2))
-    lines.append(f"Dialogue: 0,{ass_time(total - OUTRO + 1)},{ass_time(total - 0.5)},Card,,0,0,0,,"
-                 f"{{\\fad(500,400)}}{ass_text(thanks)}")
+
+
+def series_stamp(episode, total):
+    return (f"Dialogue: 2,0:00:00.00,{ass_time(total)},Tiny,,0,0,0,,"
+            f"{{\\fad(400,400)}}{ass_escape(SERIES['series'])}  ·  एपिसोड {episode}")
+
+
+def scene_ass(scene, timings, duration, path):
+    lines = [ASS_HEAD, series_stamp(scene.get("episode", 1), duration)]
+    card = ass_lines(scene["card"], 22, 2)
+    lines.append(f"Dialogue: 1,0:00:00.20,{ass_time(CARD - 0.2)},Card,,0,0,0,,"
+                 f"{{\\pos(540,860)\\an5\\fad(350,300)}}{card}")
+    for (start, end), ln in zip(timings, scene["lines"]):
+        color = ass_color(CAST[ln["speaker"]]["color"])
+        body = ass_lines(ln["text"], 30, 3)
+        s, e = start + CARD, end + CARD
+        lines.append(f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Sub,,0,0,0,,"
+                     f"{{\\c{color}\\fad(70,70)}}{body}")
+        lines.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Name,,0,0,0,,"
+                     f"{{\\pos(540,1452)\\an5\\c{color}\\fad(70,70)}}{ass_escape(ln['speaker'])}")
+        lines.append(f"Dialogue: 1,{ass_time(s)},{ass_time(e)},Name,,0,0,0,,"
+                     f"{{\\pos(540,1492)\\an5\\c{color}\\fad(70,70)\\p1}}"
+                     f"m -70 0 l 70 0 70 5 -70 5{{\\p0}}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
-def build(outline, chapters, slug):
+def card_ass(title, sub, duration, path, big=False):
+    lines = [ASS_HEAD]
+    style = "Big" if big else "Card"
+    body = ass_lines(title, 18 if big else 22, 3)
+    lines.append(f"Dialogue: 1,0:00:00.40,{ass_time(duration - 0.4)},{style},,0,0,0,,"
+                 f"{{\\pos(540,880)\\an5\\fad(500,400)}}{body}")
+    if sub:
+        small = ass_lines(sub, 28, 3)
+        lines.append(f"Dialogue: 1,0:00:01.20,{ass_time(duration - 0.4)},Card,,0,0,0,,"
+                     f"{{\\pos(540,1120)\\an5\\fad(500,400)\\fs48}}{small}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def silence(seconds, path):
+    run([FFMPEG, "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+         "-t", f"{seconds:.3f}", "-c:a", "pcm_s16le", path])
+    return path
+
+
+def make_gradient():
+    if GRAD.exists():
+        return GRAD
+    GRAD.parent.mkdir(parents=True, exist_ok=True)
+    run([FFMPEG, "-y", "-f", "lavfi", "-i", f"color=c=black@0.0:s={W}x{H},format=rgba",
+         "-vf", "geq=r=0:g=0:b=0:a='255*(0.72*max(0,1-Y/430) + 0.80*max(0,(Y-1280)/640))'",
+         "-frames:v", "1", GRAD])
+    return GRAD
+
+
+def render_piece(clip, wav, ass, duration, out, face=False, grain=True):
+    shutil.copy(FONT, WORK / "dfont.ttf")
+    make_gradient()
+    blur = ",boxblur=10:2" if face else ""
+    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS},"
+          "zoompan=z='1.04+0.05*sin(on/240)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=24,"
+          f"eq=contrast=1.07:saturation=0.88:brightness=-0.045:gamma=0.98{blur}")
+    if grain:
+        vf += ",noise=alls=5:allf=t"
+    graph = (
+        f"[0:v]{vf}[base];"
+        "[base][2:v]overlay=0:0:format=auto[g];"
+        f"[g]ass={ass.name}:fontsdir=.[v];"
+        "[1:a]anull[a]"
+    )
+    run([FFMPEG, "-y",
+         "-stream_loop", "-1", "-i", clip,
+         "-i", wav,
+         "-i", GRAD,
+         "-filter_complex", graph,
+         "-map", "[v]", "-map", "[a]",
+         "-t", f"{duration:.3f}", "-r", str(FPS),
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", out], cwd=WORK)
+    return out
+
+
+def pick_clip(setting, used):
+    tag = setting if setting in TAGS else None
+    if tag is None or tag in used:
+        tag = next((t for t in SERIES["settings"] if t in TAGS and t not in used), None)
+    if tag is None:
+        tag = next((t for t in TAGS if t not in used), next(iter(TAGS)))
+    used.add(tag)
+    return TAGS[tag], tag in FACE
+
+
+def build(plan, slug):
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
-    text = "\n".join(c["text"] for c in chapters)
-    chunks = chunks_of(text)
-    print("chunks:", len(chunks))
-    wavs = narrate(chunks)
+    drama = WORK / "drama"
+    drama.mkdir(exist_ok=True)
+    used, pieces, timeline = set(), [], []
+    models = voice.DRAMA_MODELS
 
-    list_file = WORK / "concat.txt"
-    gap = silence(GAP, WORK / "gap.wav")
-    lead = silence(INTRO, WORK / "lead.wav")
-    tail = silence(OUTRO, WORK / "tail.wav")
-    entries = [lead]
-    for w in wavs:
-        entries.extend([w, gap])
-    entries.append(tail)
-    list_file.write_text("".join(f"file '{p.as_posix()}'\n" for p in entries), encoding="utf-8")
-    narration = WORK / "narration.wav"
-    run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", list_file,
-         "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", narration])
+    intro_wav = silence(INTRO, WORK / "intro.wav")
+    intro_ass = card_ass(f"{SERIES['series']}\nएपिसोड {plan['episode']}", plan["title"],
+                         INTRO, WORK / "intro.ass", big=True)
+    clip, face = pick_clip("sunrise", used)
+    pieces.append(render_piece(clip, intro_wav, intro_ass, INTRO, WORK / "p_intro.mp4", face, grain=False))
 
-    t = INTRO
-    events = []
-    for w in wavs:
-        d = media_duration(w)
-        events.append((t, t + d, chunks[len(events)]))
-        t += d + GAP
-    total = t - GAP + OUTRO
-    print("total:", round(total / 60, 1), "min")
+    for i, scene in enumerate(plan["scenes"]):
+        scene["episode"] = plan["episode"]
+        wav = drama / f"s{i:02d}.wav"
+        meta_path = drama / f"s{i:02d}.json"
+        if not wav.exists():
+            turns = scene["lines"]
+            k = i % len(models)
+            order = models[k:] + models[:k]
+            raw = drama / f"s{i:02d}_raw.wav"
+            voice.dialogue_audio(turns, CAST, raw, models=order)
+            dur = media_duration(raw)
+            timings = voice.align_lines(turns, dur, voice.silence_gaps(raw))
+            lead = silence(CARD, WORK / f"lead{i}.wav")
+            tail = silence(TAIL, WORK / f"tail{i}.wav")
+            lst = WORK / f"lst{i}.txt"
+            lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in (lead, raw, tail)), encoding="utf-8")
+            run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", lst,
+                 "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1", wav])
+            meta_path.write_text(json.dumps({"duration": dur, "timings": timings}, ensure_ascii=False),
+                                 encoding="utf-8")
+        else:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            dur, timings = meta["duration"], [tuple(t) for t in meta["timings"]]
+        total = CARD + dur + TAIL
+        ass = scene_ass(scene, timings, total, WORK / f"sc{i:02d}.ass")
+        clip, face = pick_clip(scene.get("setting", ""), used)
+        pieces.append(render_piece(clip, wav, ass, total, WORK / f"p{i:02d}.mp4", face))
+        timeline.append({"card": scene["card"], "seconds": round(total, 1), "lines": len(scene["lines"])})
+        print(f"scene {i + 1}/{len(plan['scenes'])}: {total:.1f}s, {len(scene['lines'])} lines, {clip.stem}")
 
-    import shutil
-    shutil.copy(FONT, WORK / "subfont.ttf")
-    ass = build_ass(events, outline["title"], outline["hook"], total, WORK / "story.ass")
+    outro_wav = silence(OUTRO, WORK / "outro.wav")
+    outro_ass = card_ass(plan["next_question"], "अगला एपिसोड कल — चैनल सब्सक्राइब कर लो",
+                         OUTRO, WORK / "outro.ass")
+    clip, face = pick_clip("city-night", used)
+    pieces.append(render_piece(clip, outro_wav, outro_ass, OUTRO, WORK / "p_outro.mp4", face, grain=False))
+
+    lst = WORK / "pieces.txt"
+    lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in pieces), encoding="utf-8")
+    joined = WORK / "joined.mp4"
+    run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined])
+    total = media_duration(joined)
 
     video = OUT / f"{slug}.mp4"
     graph = (
-        "[0:v]fps=24,setsar=1[bg];"
-        f"[bg]ass=story.ass:fontsdir=.[v];"
-        "[1:a]highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=6:release=160[voice];"
-        f"[2:a]volume=0.16,afade=t=in:st=0:d=2,afade=t=out:st={max(0, total - 4):.1f}:d=4[mus];"
-        "[voice][mus]amix=inputs=2:duration=first:normalize=0,"
+        "[0:a]asplit=2[voc][key];"
+        f"[1:a]volume=0.20,afade=t=in:st=0:d=3,afade=t=out:st={max(0, total - 5):.1f}:d=5[mus];"
+        "[mus][key]sidechaincompress=threshold=0.02:ratio=10:attack=20:release=500[duck];"
+        "[voc][duck]amix=inputs=2:duration=first:normalize=0,"
         "alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]"
     )
-    run([FFMPEG, "-y",
-         "-stream_loop", "-1", "-i", BG,
-         "-i", narration,
-         "-stream_loop", "-1", "-i", MUSIC,
-         "-filter_complex", graph,
-         "-map", "[v]", "-map", "[a]",
-         "-t", f"{total:.2f}", "-r", "24",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart",
-         video], cwd=WORK)
+    run([FFMPEG, "-y", "-i", joined, "-stream_loop", "-1", "-i", MUSIC,
+         "-filter_complex", graph, "-map", "0:v", "-map", "[a]",
+         "-t", f"{total:.3f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+         "-ar", "48000", "-movflags", "+faststart", video])
+    print("TIMELINE:", json.dumps(timeline, ensure_ascii=False))
     return video, total
 
 
-def split_upload(video, data):
-    dur = media_duration(video)
-    cut = dur / 2
-    first = None
-    for i, (ss, span) in enumerate(((0, cut), (cut, dur - cut)), 1):
-        part = OUT / f"{video.stem}-part{i}.mp4"
-        run([FFMPEG, "-y", "-ss", f"{ss:.2f}", "-i", video, "-t", f"{span:.2f}",
-             "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", part])
-        d = dict(data)
-        d["title"] = f"{data['title'][:88]} | Part {i}/2"
-        d["description"] = ("Part 1/2.\n\n" if i == 1 else "Part 2/2. Part 1 pehle dekho.\n\n") + data["description"]
-        vid = upload(part, d)
-        print("PART", i, vid)
-        first = first or vid
-    return first
-
-
-def already_on_channel(day):
-    """Aaj ki story channel par pehle se hai? Upload log se pata karo (double-post se bachao)."""
+def already_on_channel(day, series):
     from googleapiclient.discovery import build
     from pipeline import get_creds
     creds = get_creds()
@@ -336,78 +426,85 @@ def already_on_channel(day):
     ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
     items = yt.playlistItems().list(
         playlistId=ch["contentDetails"]["relatedPlaylists"]["uploads"],
-        part="snippet", maxResults=20).execute().get("items", [])
+        part="snippet", maxResults=25).execute().get("items", [])
     for it in items:
         s = it.get("snippet", {})
-        if str(s.get("publishedAt", "")).startswith(day) and "Hindi Kahani" in s.get("title", ""):
+        if str(s.get("publishedAt", "")).startswith(day) and series in s.get("title", ""):
             return True
     return False
 
 
 def main():
-    import datetime
-    from pipeline import mark_blocked, upload_blocked
+    from pipeline import mark_blocked, upload, upload_blocked, UploadLimitReached
     today = datetime.date.today().isoformat()
     log = OUT / "stories.txt"
     if log.exists() and any(l.startswith(today) for l in log.read_text(encoding="utf-8").splitlines()):
-        print("SKIP: aaj ki story already upload ho chuki hai")
+        print("SKIP: aaj ka episode pehle hi upload ho chuka hai")
         sys.exit(0)
-    if already_on_channel(today):
-        print("SKIP: aaj ki story channel par already upload hai")
+    if already_on_channel(today, SERIES["series"]):
+        print("SKIP: aaj ka episode channel par pehle se hai")
         sys.exit(0)
     if upload_blocked():
         print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
-    story_state_path = ROOT / "story_state.json"
-    state = json.loads(story_state_path.read_text(encoding="utf-8")) if story_state_path.exists() else {}
-    idx = state.get("story_index", 0)
-    topic = TOPICS[idx % len(TOPICS)]
-    outline, chapters = write_story(topic)
-    slug = f"story-{datetime.date.today().isoformat()}"
-    video, total = build(outline, chapters, slug)
-    minutes = round(total / 60)
-    print("VIDEO:", video, round(video.stat().st_size / 1e6, 1), "MB")
 
+    state_path = ROOT / "story_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    ep = state.get("episode", 1)
+    cache = OUT / f"episode-{today}.json"
+    if cache.exists():
+        plan = json.loads(cache.read_text(encoding="utf-8"))
+        print("cached script:", plan["title"])
+    else:
+        plan = write_episode(ep, state.get("revealed", []))
+        cache.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    slug = f"drama-ep{ep:02d}-{today}"
+    video, total = build(plan, slug)
+    minutes = round(total / 60)
+    print("VIDEO:", video, round(video.stat().st_size / 1e6, 1), "MB", f"{minutes} min")
+
+    recap = "\n".join(f"- {r}" for r in state.get("revealed", [])[-4:])
+    desc = f"{plan['logline']}\n\n"
+    if recap:
+        desc += f"Pichhle episodes mein:\n{recap}\n\n"
+    desc += (f"Is episode ka sawaal: {plan['next_question']}\n\n"
+             "Poori series ek hi playlist mein — episode 1 se shuru karo.\n"
+             "Har roz naya episode. Subscribe kar lo taaki agla hissa chhoote nahi.\n\n"
+             f"#hindikahani #audiodrama #suspense #{SERIES['series'].replace(' ', '')}")
     data = {
-        "title": f"{outline['title']} | Hindi Kahani"[:100],
-        "description": (f"{outline['hook']}\n\n{outline['moral']}\n\n"
-                        f"Poori kahani sunne ke liye video chalao — {minutes} minute.\n"
-                        "Har roz nayi Hindi kahani.\n\n#kahani #hindikahani #emotionalstory #hindistory"),
-        "hashtags": "#kahani #hindikahani #emotionalstory #hindistory",
-        "tags": ["hindi kahani", "emotional story", "hindi story", "audio story",
-                 "moral story", "family story", "kahaniyan"],
-        "attribution": "Background footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), CC-BY 3.0. "
-                       "Story generated with AI.",
+        "title": f"{plan['title']} | {SERIES['series']} एपिसोड {ep}"[:100],
+        "description": desc,
+        "hashtags": f"#hindikahani #audiodrama #suspensestory #{SERIES['series'].replace(' ', '')}",
+        "tags": ["hindi kahani", "audio drama", "hindi suspense story", "family drama",
+                 "kahaniyan", "hindi audio story", SERIES["series"], "emotional story"],
+        "attribution": "Footage: Mixkit free stock video (mixkit.co), royalty-free licence. "
+                       "Dialogue performed with Gemini TTS. Story written with AI. "
+                       "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
     }
-    from pipeline import upload, UploadLimitReached
     try:
         vid = upload(video, data)
     except UploadLimitReached as exc:
         mark_blocked()
         print("SKIP: upload limit full —", str(exc)[:80], file=sys.stderr)
         sys.exit(0)
-    except Exception as exc:
-        if "too long" in str(exc).lower():
-            print("channel par 15-min limit hai — story 2 parts me upload kar raha hoon", file=sys.stderr)
-            vid = split_upload(video, data)
-        else:
-            raise
     if not vid:
-        print("Auth missing — story record nahi bana, agla tick retry karega", file=sys.stderr)
+        print("Auth missing — record nahi bana, agla tick retry karega", file=sys.stderr)
         sys.exit(1)
-    with (ROOT / "output" / "stories.txt").open("a", encoding="utf-8") as f:
-        f.write(f"{datetime.date.today().isoformat()} | {topic} | {minutes}min | youtu.be/{vid}\n")
+    with log.open("a", encoding="utf-8") as f:
+        f.write(f"{today} | ep{ep} | {plan['title']} | {minutes}min | youtu.be/{vid}\n")
     try:
         import ig
         if ig.token():
             ig.publish(ig.teaser(video, 60),
-                       f"{outline['title']} | Poori {minutes} min ki kahani YouTube par\n\n"
-                       f"{data['hashtags']}")
+                       f"{plan['title']} | episode {ep} — poori kahani YouTube par\n\n{data['hashtags']}")
     except Exception as exc:
         print("IG SKIP:", str(exc)[:200])
-    state["story_index"] = idx + 1
-    story_state_path.write_text(json.dumps(state), encoding="utf-8")
+    state["episode"] = ep + 1
+    state.setdefault("revealed", []).append(plan.get("reveal", ""))
+    state["revealed"] = state["revealed"][-14:]
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 if __name__ == "__main__":
