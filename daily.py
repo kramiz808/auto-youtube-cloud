@@ -10,7 +10,7 @@ import reel
 import voice
 
 ROOT = Path(__file__).resolve().parent
-GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"]
+GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-3-flash-preview", "gemini-flash-latest"]
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 
