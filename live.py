@@ -19,7 +19,7 @@ def skip(msg):
 
 
 def main():
-    creds = get_creds()
+    creds = get_creds(["https://www.googleapis.com/auth/youtube"])
     if creds is None:
         skip("YOUTUBE_TOKEN / token.json missing")
     if not any(s.rstrip("/").endswith("/youtube") for s in (creds.scopes or [])):

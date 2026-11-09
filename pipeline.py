@@ -35,9 +35,9 @@ def media_duration(path):
     return float(out.strip())
 
 
-def get_creds():
+def get_creds(scopes=None):
     from google.oauth2.credentials import Credentials
-    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+    scopes = scopes or ["https://www.googleapis.com/auth/youtube.upload"]
     env = os.environ.get("YOUTUBE_TOKEN")
     if env:
         return Credentials.from_authorized_user_info(json.loads(env), scopes)
@@ -77,8 +77,9 @@ def upload(video_path, data):
         try:
             status, resp = req.next_chunk(num_retries=3)
         except Exception as exc:
-            if "uploadLimitExceeded" in str(exc):
-                raise UploadLimitReached(str(exc)[:120])
+            text = str(exc)
+            if "uploadLimitExceeded" in text or "exceeded the number of videos" in text:
+                raise UploadLimitReached(text[:160])
             raise
         if status:
             print(f"upload {int(status.progress() * 100)}%")
