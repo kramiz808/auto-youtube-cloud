@@ -57,14 +57,25 @@ def mark_blocked(minutes=90):
 
 def get_creds(scopes=None):
     from google.oauth2.credentials import Credentials
-    scopes = scopes or ["https://www.googleapis.com/auth/youtube.upload"]
     env = os.environ.get("YOUTUBE_TOKEN")
     if env:
-        return Credentials.from_authorized_user_info(json.loads(env), scopes)
-    token = ROOT / "token.json"
-    if token.exists():
-        return Credentials.from_authorized_user_file(str(token), scopes)
-    return None
+        info = json.loads(env)
+    else:
+        token = ROOT / "token.json"
+        if not token.exists():
+            return None
+        info = json.loads(token.read_text(encoding="utf-8"))
+    granted = info.get("scopes") or []
+    if isinstance(granted, str):
+        granted = granted.split()
+    granted = [s for s in granted if s]
+    if scopes:
+        use = [s for s in scopes if s in granted] or granted
+    else:
+        use = granted
+    if not use:
+        use = scopes
+    return Credentials.from_authorized_user_info(info, use)
 
 
 def upload(video_path, data):
