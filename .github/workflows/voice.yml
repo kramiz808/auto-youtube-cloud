@@ -2,7 +2,7 @@ name: Hindi voice cache
 
 on:
   schedule:
-    - cron: '5 8,22 * * *'
+    - cron: '5 2,8,14,20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -44,5 +44,12 @@ jobs:
             exit 0
           fi
           git commit -m "cache hindi voice $(date -u +%F)"
-          git pull --rebase origin main
-          git push
+          for attempt in 1 2 3; do
+            git rebase --abort >/dev/null 2>&1 || true
+            if git pull --rebase origin main && git push; then
+              echo "pushed"
+              exit 0
+            fi
+          done
+          echo "push failed after 3 attempts"
+          exit 1
