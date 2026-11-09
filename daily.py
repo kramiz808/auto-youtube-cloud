@@ -59,29 +59,9 @@ def gemini_app(api_key):
     return None
 
 
-def main():
-    import os
-    state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
-    force = os.environ.get("FORCE") == "1"
-    now = datetime.datetime.now(IST)
-    today = now.date().isoformat()
-    if force:
-        slot = "extra"
-    else:
-        due = due_slots(now.hour * 60 + now.minute)
-        if not due:
-            print("SKIP: abhi koi posting slot nahi hua")
-            sys.exit(0)
-        done = posted_slots(today)
-        slot = next((name for name in due if name not in done), None)
-        if slot is None:
-            print("SKIP: aaj ke saare slots post ho chuke")
-            sys.exit(0)
-    if pipeline.upload_blocked() and not force:
-        print("SKIP: YouTube upload quota reset ka intezaar")
-        sys.exit(0)
+def post_slot(slot, today, state, run_no):
+    """Ek slot ka short bana ke upload karo. Video id return, warna None."""
     scene_list = reel.load_scenes()
-    run_no = state.get("scene_index", 0)
     scene = scene_list[run_no % len(scene_list)]
     hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
     titles = scene.get("titles") or [scene["title"]]
@@ -99,7 +79,7 @@ def main():
     except voice.VoiceUnavailable as exc:
         print(f"SKIP: Hindi voice cache incomplete aur Gemini quota khatam ({exc}). "
               f"State advance nahi hua — agla run retry karega.", file=sys.stderr)
-        sys.exit(0)
+        return None
     print(f"VIDEO: {video}")
     try:
         vid = pipeline.upload(video, data)
@@ -107,27 +87,62 @@ def main():
         pipeline.mark_blocked()
         print("SKIP: YouTube ka daily upload limit full hai. Reset ke baad apne aap retry.",
               file=sys.stderr)
-        sys.exit(0)
+        return None
+    if not vid:
+        print("Auth missing — state advance nahi hua", file=sys.stderr)
+        return None
 
     now = datetime.datetime.now(IST)
     posts = ROOT / "output" / "posts.txt"
-    if not vid:
-        print("Auth missing — state advance nahi hua", file=sys.stderr)
-        sys.exit(1)
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
         f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
     with posts.open("a", encoding="utf-8") as f:
         f.write(f"{now.date()} {slot} | {vid} | {scene['file']}\n")
-    state.pop("blocked_until", None)
     pipeline.clear_blocked()
     try:
         import ig
         ig.publish(video, f"{data['title']}\n\n{data['hashtags']}\n\n{data['description'][:500]}")
     except Exception as exc:
         print("IG SKIP:", str(exc)[:200])
+    return vid
 
-    state["scene_index"] = run_no + 1
-    (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
+
+def main():
+    import os
+    state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
+    force = os.environ.get("FORCE") == "1"
+    now = datetime.datetime.now(IST)
+    today = now.date().isoformat()
+    if force:
+        slots = ["extra"]
+    else:
+        due = due_slots(now.hour * 60 + now.minute)
+        if not due:
+            print("SKIP: abhi koi posting slot nahi hua")
+            sys.exit(0)
+        done = posted_slots(today)
+        pending = [name for name in due if name not in done]
+        if not pending:
+            print("SKIP: aaj ke saare slots post ho chuke")
+            sys.exit(0)
+        # Aakhri ghante me tick aaya to jitne bache hue slots hain sab post kar do —
+        # scheduler kabhi kabhi poora din miss kar deta hai.
+        slots = pending if now.hour >= 19 else pending[:1]
+    if pipeline.upload_blocked() and not force:
+        print("SKIP: YouTube upload quota reset ka intezaar")
+        sys.exit(0)
+
+    run_no = state.get("scene_index", 0)
+    posted = 0
+    for slot in slots:
+        if not post_slot(slot, today, state, run_no):
+            break
+        posted += 1
+        run_no += 1
+        state["scene_index"] = run_no
+        (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    if not posted:
+        sys.exit(0)
 
     key = os.environ.get("GEMINI_API_KEY")
     if key:
