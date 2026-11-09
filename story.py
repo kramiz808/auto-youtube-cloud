@@ -370,6 +370,9 @@ def main():
             vid = split_upload(video, data)
         else:
             raise
+    if not vid:
+        print("Auth missing — story record nahi bana, agla tick retry karega", file=sys.stderr)
+        sys.exit(1)
     with (ROOT / "output" / "stories.txt").open("a", encoding="utf-8") as f:
         f.write(f"{datetime.date.today().isoformat()} | {topic} | {minutes}min | youtu.be/{vid}\n")
     try:

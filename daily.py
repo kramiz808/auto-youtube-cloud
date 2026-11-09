@@ -111,6 +111,9 @@ def main():
 
     now = datetime.datetime.now(IST)
     posts = ROOT / "output" / "posts.txt"
+    if not vid:
+        print("Auth missing — state advance nahi hua", file=sys.stderr)
+        sys.exit(1)
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
         f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
     with posts.open("a", encoding="utf-8") as f:
@@ -122,9 +125,6 @@ def main():
     except Exception as exc:
         print("IG SKIP:", str(exc)[:200])
 
-    if not vid:
-        print("Auth missing — state advance nahi hua", file=sys.stderr)
-        sys.exit(1)
     state["scene_index"] = run_no + 1
     (ROOT / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
