@@ -2,11 +2,15 @@ name: Hindi voice cache
 
 on:
   schedule:
-    - cron: '30 8 * * *'
+    - cron: '5 8,22 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: voice-cache
+  cancel-in-progress: false
 
 jobs:
   voice:

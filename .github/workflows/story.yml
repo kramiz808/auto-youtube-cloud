@@ -2,12 +2,15 @@ name: Daily Hindi story (20-25 min)
 
 on:
   schedule:
-    - cron: '0 15-17 * * *'
-    - cron: '0 20 * * *'
+    - cron: '30 14,15,16 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: story-post
+  cancel-in-progress: false
 
 jobs:
   story:
@@ -49,7 +52,7 @@ jobs:
           git config user.email "actions@github.com"
           git add state.json
           if [ -f output/stories.txt ]; then git add output/stories.txt; fi
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "daily story $(date -u +%F)"
           git pull --rebase origin main
           git push

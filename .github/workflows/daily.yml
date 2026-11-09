@@ -2,7 +2,7 @@ name: Daily AI Employee
 
 on:
   schedule:
-    - cron: '0 1-6,8,9,11-17 * * *'
+    - cron: '30 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -13,24 +13,43 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: daily-posts
+  cancel-in-progress: false
+
 jobs:
   daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
+      - name: Posting window check
+        id: win
+        run: |
+          hh=$(TZ=Asia/Kolkata date +%H)
+          echo "IST hour: $hh"
+          case "$hh" in
+            07|08|14|15|17|18) echo "due=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "due=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - uses: actions/checkout@v4
+        if: steps.win.outputs.due == 'true' || inputs.force == true
 
       - uses: actions/setup-python@v5
+        if: steps.win.outputs.due == 'true' || inputs.force == true
         with:
           python-version: '3.12'
 
       - name: Install ffmpeg + Hindi font
+        if: steps.win.outputs.due == 'true' || inputs.force == true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core
 
       - name: Install Python deps
+        if: steps.win.outputs.due == 'true' || inputs.force == true
         run: pip install -q -r requirements.txt
 
       - name: Run daily pipeline
+        if: steps.win.outputs.due == 'true' || inputs.force == true
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -39,7 +58,7 @@ jobs:
         run: python daily.py
 
       - name: Upload video artifact
-        if: always()
+        if: always() && (steps.win.outputs.due == 'true' || inputs.force == true)
         uses: actions/upload-artifact@v4
         with:
           name: daily-video
@@ -48,9 +67,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commit state back
-        if: always()
+        if: always() && (steps.win.outputs.due == 'true' || inputs.force == true)
         run: |
           git config user.name "ai-employee"
           git config user.email "actions@github.com"
           git add -A
-          git diff --cached --quiet || (git commit -m "daily run $(date -u +%F)" && git push)
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "daily run $(date -u +%F)"
+          git pull --rebase origin main
+          git push

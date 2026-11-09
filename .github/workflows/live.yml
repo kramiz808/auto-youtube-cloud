@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: live-stream
+  cancel-in-progress: false
+
 jobs:
   live:
     runs-on: ubuntu-latest

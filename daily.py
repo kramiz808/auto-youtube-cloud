@@ -14,15 +14,24 @@ GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 
-def slot_now():
-    hour = datetime.datetime.now(IST).hour
-    if 6 <= hour < 13:
-        return "morning"
-    if 13 <= hour < 16:
-        return "afternoon"
-    if 16 <= hour < 20:
-        return "evening"
-    return None
+SLOTS = (("morning", 7 * 60), ("afternoon", 14 * 60), ("evening", 17 * 60))
+
+
+def due_slots(minutes):
+    return [name for name, target in SLOTS if minutes >= target]
+
+
+def posted_slots(day):
+    posts = ROOT / "output" / "posts.txt"
+    names = {name for name, _ in SLOTS}
+    if not posts.exists():
+        return set()
+    out = set()
+    for line in posts.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) > 1 and parts[0] == day and parts[1] in names:
+            out.add(parts[1])
+    return out
 
 
 def gemini_app(api_key):
@@ -54,24 +63,28 @@ def main():
     import os
     state = json.loads((ROOT / "state.json").read_text(encoding="utf-8"))
     force = os.environ.get("FORCE") == "1"
-    slot = slot_now() or "extra"
-    if not force:
-        if slot == "extra":
-            print("SKIP: posting window ke bahar (6am-8pm IST)")
+    now = datetime.datetime.now(IST)
+    today = now.date().isoformat()
+    if force:
+        slot = "extra"
+    else:
+        due = due_slots(now.hour * 60 + now.minute)
+        if not due:
+            print("SKIP: abhi koi posting slot nahi hua")
             sys.exit(0)
-        if pipeline.upload_blocked():
-            print("SKIP: YouTube upload quota reset ka intezaar")
+        done = posted_slots(today)
+        slot = next((name for name in due if name not in done), None)
+        if slot is None:
+            print("SKIP: aaj ke saare slots post ho chuke")
             sys.exit(0)
-    posts = ROOT / "output" / "posts.txt"
-    if not force and posts.exists() and f"{datetime.datetime.now(IST).date()} {slot}" in posts.read_text(encoding="utf-8"):
-        print(f"SKIP: aaj ka {slot} post ho chuka")
+    if pipeline.upload_blocked() and not force:
+        print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
     scene_list = reel.load_scenes()
     run_no = state.get("scene_index", 0)
     scene = scene_list[run_no % len(scene_list)]
     hook = scene["hooks"][(run_no // len(scene_list)) % len(scene["hooks"])]
     titles = scene.get("titles") or [scene["title"]]
-    today = datetime.date.today().isoformat()
     slug = f"{today}-{run_no % len(scene_list):02d}"
 
     data = {k: scene[k] for k in ("description", "hashtags", "tags", "attribution")}
@@ -97,6 +110,7 @@ def main():
         sys.exit(0)
 
     now = datetime.datetime.now(IST)
+    posts = ROOT / "output" / "posts.txt"
     with (ROOT / "output" / "log.txt").open("a", encoding="utf-8") as f:
         f.write(f"{today} | {scene['file']} | hook={hook} | youtube_id={vid} | {video.name}\n")
     with posts.open("a", encoding="utf-8") as f:
