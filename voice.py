@@ -9,6 +9,8 @@ from pathlib import Path
 from pipeline import FFMPEG, ROOT, WORK, media_duration, run
 
 MODEL = "gemini-2.5-flash-preview-tts"
+MODELS = ["gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview",
+          "gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"]
 DEFAULT_VOICE = "Kore"
 DUB_DIR = ROOT / "assets" / "dub"
 STYLE = ("Say this line like a Hindi film dubbing artist: warm, emotional, cinematic, "
@@ -33,23 +35,30 @@ def gemini_line(text, voice_name, out):
                 "responseModalities": ["AUDIO"],
                 "speechConfig": {"voiceConfig": {
                     "prebuiltVoiceConfig": {"voiceName": voice_name}}}}}
-    req = urllib.request.Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-        f"?key={_key()}",
-        data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
-    try:
-        resp = json.loads(urllib.request.urlopen(req, timeout=180).read())
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"gemini tts {exc.code}: {exc.read()[:200].decode('utf-8', 'replace')}")
-    for part in resp["candidates"][0]["content"]["parts"]:
-        data = part.get("inlineData") or part.get("inline_data")
-        if data:
-            pcm = WORK / "line.pcm"
-            pcm.write_bytes(base64.b64decode(data["data"]))
-            run([FFMPEG, "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm,
-                 "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "24000", "-ac", "1", out])
-            return out
-    raise RuntimeError("gemini tts: no audio in response")
+    data = json.dumps(body).encode("utf-8")
+    for model in MODELS:
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            f"?key={_key()}",
+            data=data, headers={"Content-Type": "application/json"})
+        try:
+            resp = json.loads(urllib.request.urlopen(req, timeout=180).read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read()[:200].decode("utf-8", "replace")
+            if exc.code == 429:
+                print(f"TTS quota full on {model}, switching model")
+                continue
+            raise RuntimeError(f"gemini tts {exc.code}: {detail}")
+        for part in resp["candidates"][0]["content"]["parts"]:
+            blob = part.get("inlineData") or part.get("inline_data")
+            if blob:
+                pcm = WORK / "line.pcm"
+                pcm.write_bytes(base64.b64decode(blob["data"]))
+                run([FFMPEG, "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm,
+                     "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "24000", "-ac", "1", out])
+                return out
+        raise RuntimeError(f"gemini tts: no audio in response ({model})")
+    raise VoiceUnavailable("all tts models quota full")
 
 
 def line_audio(scene, k, sub):
@@ -61,10 +70,10 @@ def line_audio(scene, k, sub):
     for attempt in range(4):
         try:
             return gemini_line(sub["text"], voice, out)
+        except VoiceUnavailable:
+            raise
         except Exception as exc:
             print("GEMINI TTS retry", attempt + 1, exc)
-            if attempt == 3:
-                raise VoiceUnavailable(f"voice quota/network: {sub['text']}")
             time.sleep(25 * (attempt + 1))
     raise VoiceUnavailable(sub["text"])
 
