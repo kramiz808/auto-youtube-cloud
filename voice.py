@@ -1,8 +1,10 @@
-"""ElevenLabs dialogue with content-keyed caching and measured line timings."""
+"""Dialogue TTS with content-keyed caching and measured line timings."""
+import asyncio
 import hashlib
 import json
 import os
 import re
+import time
 import wave
 import urllib.error
 import urllib.request
@@ -15,10 +17,79 @@ DEFAULT_VOICE = "CwhRBWXzGAHq8TQ4Fs17"
 DUB_DIR = ROOT / "assets" / "dub" / "elevenlabs"
 SAMPLE_RATE = 48000
 LINE_GAP = 0.16
+EDGE_RATE = {"angry": "+12%", "sad": "-10%", "nervous": "+14%", "whispers": "-8%"}
+EDGE_PITCH = {"angry": "+8Hz", "sad": "-12Hz", "nervous": "+10Hz", "whispers": "-6Hz"}
 
 
 class VoiceUnavailable(RuntimeError):
     pass
+
+
+def tts_provider():
+    return os.environ.get("TTS_PROVIDER", "").strip().casefold() or "elevenlabs"
+
+
+def mood_tag(emotion):
+    mood = (emotion or "").casefold()
+    for label, words in (
+        ("whispers", ("whisper", "secret")),
+        ("angry", ("angry", "anger", "furious", "bitter", "taunt", "accus", "defian")),
+        ("sad", ("sad", "grief", "tear", "cry", "hurt", "regret", "guilt", "plead")),
+        ("nervous", ("fear", "scare", "worry", "anxious", "nervous", "panic", "tense")),
+    ):
+        if any(word in mood for word in words):
+            return label
+    return ""
+
+
+async def _edge_save(edge_tts, text, voice, rate, pitch, path):
+    await edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(str(path))
+
+
+def edge_speech(text, voice, emotion=""):
+    tag = mood_tag(emotion)
+    rate = EDGE_RATE.get(tag, "+0%")
+    pitch = EDGE_PITCH.get(tag, "+0Hz")
+    fingerprint = json.dumps({"voice": voice, "text": text, "rate": rate, "pitch": pitch},
+                             ensure_ascii=False, sort_keys=True).encode("utf-8")
+    cache = WORK / "edge"
+    cache.mkdir(parents=True, exist_ok=True)
+    mp3 = cache / f"{hashlib.sha256(fingerprint).hexdigest()}.mp3"
+    if mp3.exists():
+        return mp3
+    try:
+        import edge_tts
+    except ImportError:
+        raise VoiceUnavailable("edge-tts missing; pip install -r requirements.txt") from None
+    partial = mp3.with_suffix(".part.mp3")
+    failure = None
+    for attempt in range(3):
+        try:
+            asyncio.run(_edge_save(edge_tts, text, voice, rate, pitch, partial))
+            break
+        except Exception as exc:
+            failure = exc
+            time.sleep(2 + attempt * 3)
+    else:
+        raise VoiceUnavailable(f"Edge TTS failed; no alternate voice used ({type(failure).__name__})")
+    if partial.stat().st_size < 1000:
+        partial.unlink(missing_ok=True)
+        raise VoiceUnavailable("Edge TTS returned empty audio")
+    partial.replace(mp3)
+    return mp3
+
+
+def preflight(cast):
+    if tts_provider() == "edge":
+        voices = [c.get("edge_voice", "") for c in cast.values()]
+        if not all(voices):
+            raise VoiceUnavailable("series.json: har kirdar ke liye edge_voice chahiye")
+        if len(set(voices)) != len(voices):
+            raise VoiceUnavailable("series.json: har kirdar ki Edge voice alag honi chahiye")
+        return
+    api_key()
+    for character in cast.values():
+        resolve_voice_id(character["voice"])
 
 
 def api_key():
@@ -76,22 +147,14 @@ def resolve_voice_id(name):
 
 
 def speech_body(text, emotion=""):
-    mood = emotion.casefold()
-    tag = ""
-    for label, words in (
-        ("whispers", ("whisper", "secret")),
-        ("angry", ("angry", "anger", "furious", "bitter", "taunt", "accus", "defian")),
-        ("sad", ("sad", "grief", "tear", "cry", "hurt", "regret", "guilt", "plead")),
-        ("nervous", ("fear", "scare", "worry", "anxious", "nervous", "panic", "tense")),
-    ):
-        if any(word in mood for word in words):
-            tag = label
-            break
+    tag = mood_tag(emotion)
     return {"text": f"[{tag}] {text}" if tag else text,
             "model_id": "eleven_v3", "voice_settings": {"stability": 0.5}}
 
 
 def speech_file(text, voice_id, emotion=""):
+    if tts_provider() == "edge":
+        return edge_speech(text, voice_id, emotion)
     body = speech_body(text, emotion)
     fingerprint = json.dumps({"voice": voice_id, "body": body, "format": "mp3_44100_128"},
                              ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -120,9 +183,13 @@ def line_audio(scene, k, sub):
 def dialogue_audio(turns, cast, out):
     if not turns:
         raise VoiceUnavailable("Dialogue has no lines")
-    voices = {s: resolve_voice_id(cast[s]["voice"]) for s in dict.fromkeys(t["speaker"] for t in turns)}
+    speakers = dict.fromkeys(t["speaker"] for t in turns)
+    if tts_provider() == "edge":
+        voices = {s: cast[s]["edge_voice"] for s in speakers}
+    else:
+        voices = {s: resolve_voice_id(cast[s]["voice"]) for s in speakers}
     if len(set(voices.values())) != len(voices):
-        raise VoiceUnavailable("Each dialogue character must have a distinct ElevenLabs voice")
+        raise VoiceUnavailable("Each dialogue character must have a distinct voice")
     files = []
     for turn in turns:
         mp3 = speech_file(turn["text"], voices[turn["speaker"]], turn.get("emotion", ""))
@@ -151,7 +218,7 @@ def dialogue_audio(turns, cast, out):
                 dest.writeframes(b"\0\0" * gap_frames)
                 cursor += gap_frames
     partial.replace(out)
-    print(f"ElevenLabs: {cursor / SAMPLE_RATE:.1f}s / {len(turns)} lines")
+    print(f"TTS ({tts_provider()}): {cursor / SAMPLE_RATE:.1f}s / {len(turns)} lines")
     return timings
 
 

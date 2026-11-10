@@ -9,6 +9,7 @@
       "role": "माँ",
       "age": 54,
       "voice": "Sarah",
+      "edge_voice": "hi-IN-SwaraNeural",
       "style": "a fifty-four-year-old Indian village mother, tired and warm, speaks softly but with steel underneath, hides a secret she is afraid of",
       "color": "FFD27A",
       "knows": "पति की मौत वाली रात की पूरी सच्चाई। उसने चिट्ठी का दूसरा हिस्सा जला दिया था।"
@@ -18,6 +19,7 @@
       "role": "बेटा",
       "age": 27,
       "voice": "CwhRBWXzGAHq8TQ4Fs17",
+      "edge_voice": "hi-IN-MadhurNeural",
       "style": "a twenty-seven-year-old Indian man, sharp and bitter, unemployed, loves his mother but pushes her for the truth, voice cracks when he is hurt",
       "color": "7AD1FF",
       "knows": "कुछ नहीं। सीखता जाता है। दर्शक इसके साथ चलता है।"
@@ -27,6 +29,7 @@
       "role": "बेटी",
       "age": 23,
       "voice": "Laura",
+      "edge_voice": "mr-IN-AarohiNeural",
       "style": "a twenty-three-year-old Indian college girl, practical and protective, wants the family to survive, argues with her brother but backs him when it matters",
       "color": "FF9AD5",
       "knows": "इतना कि चाचा ज़मीन के काग़ज़ बदलवा रहा है।"
@@ -36,6 +39,7 @@
       "role": "चाचा",
       "age": 58,
       "voice": "George",
+      "edge_voice": "mr-IN-ManoharNeural",
       "style": "a fifty-eight-year-old Indian village uncle, deep calm voice, polite on the surface and threatening underneath, never shouts, always reasonable",
       "color": "B7FF7A",
       "knows": "मोहन की मौत के पीछे उसका हाथ है, और ज़मीन अब उसके नाम है।"

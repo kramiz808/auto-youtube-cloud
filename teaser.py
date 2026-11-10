@@ -45,9 +45,7 @@ def teaser_scene(plan):
 
 
 def build(slug):
-    voice.api_key()
-    for character in CAST.values():
-        voice.resolve_voice_id(character["voice"])
+    voice.preflight(CAST)
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     plan = latest_plan()
@@ -95,7 +93,7 @@ def build(slug):
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", SERIES["series"],
                  "kahaniyan", "emotional story", "shorts"],
         "attribution": "Kirdar aur background: AI-generated original art. "
-                       "Dialogue performed with ElevenLabs. Story written with AI. "
+                       "Dialogue performed with neural AI voices. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
     }

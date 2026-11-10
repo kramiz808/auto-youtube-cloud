@@ -17,9 +17,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Check OpenAI and ElevenLabs
+      - name: Install edge-tts
+        run: pip install -q edge-tts
+
+      - name: Check text and TTS providers
         env:
+          TEXT_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          TTS_PROVIDER: edge
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: python smoke.py

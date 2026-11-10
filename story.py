@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -31,7 +32,68 @@ SCENES = 10
 CHARS_PER_SCENE = (780, 1050)
 
 
+def text_provider():
+    return os.environ.get("TEXT_PROVIDER", "").strip().casefold() or "openai"
+
+
+def gemini_key():
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not key:
+        for path in (ROOT / "secrets" / "gemini_key.txt", ROOT / "gemini_key.txt"):
+            if path.exists():
+                key = path.read_text(encoding="utf-8").strip()
+                if key:
+                    break
+    if not key:
+        raise RuntimeError("Gemini: missing API key (GEMINI_API_KEY or gemini_key.txt)")
+    return key
+
+
+def gemini_completion(prompt, temperature=1.0, json_mode=True):
+    model = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3-flash-preview"
+    config = {"temperature": temperature, "maxOutputTokens": 16000}
+    if json_mode:
+        config["responseMimeType"] = "application/json"
+    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+               "generationConfig": config}
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=json.dumps(payload).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "x-goog-api-key": gemini_key()})
+    response = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=240) as raw:
+                response = json.loads(raw.read())
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 503) and attempt < 2:
+                time.sleep(15 * (attempt + 1))
+                continue
+            raise RuntimeError(f"Gemini HTTP {exc.code}") from None
+        except (urllib.error.URLError, OSError):
+            raise RuntimeError("Gemini: request failed") from None
+        except ValueError:
+            raise RuntimeError("Gemini: invalid request or response") from None
+    if response is None:
+        raise RuntimeError("Gemini: request failed")
+    try:
+        candidate = response["candidates"][0]
+        content = "".join(part.get("text", "") for part in candidate["content"]["parts"])
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError("Gemini: invalid response") from None
+    if response.get("promptFeedback", {}).get("blockReason"):
+        raise RuntimeError("Gemini: response refused")
+    if candidate.get("finishReason", "STOP") != "STOP":
+        raise RuntimeError("Gemini: incomplete response")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("Gemini: empty response")
+    return content
+
+
 def text_completion(prompt, temperature=1.0, json_mode=True):
+    if text_provider() == "gemini":
+        return gemini_completion(prompt, temperature, json_mode)
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         try:
@@ -184,16 +246,34 @@ def repair(scene):
     return scene
 
 
+def lines_from(data):
+    if isinstance(data, dict):
+        if isinstance(data.get("lines"), list):
+            return data["lines"]
+        for key in ("scenes", "scene"):
+            value = data.get(key)
+            if isinstance(value, dict) and isinstance(value.get("lines"), list):
+                return value["lines"]
+            if isinstance(value, list) and value and isinstance(value[0], dict) \
+                    and isinstance(value[0].get("lines"), list):
+                return value[0]["lines"]
+    return None
+
+
 def grow(scene, plan):
     prompt = (
         f"Series \"{SERIES['series']}\". Is scene ke dialogue bahut chhote hain ({scene['chars']} akshar). "
-        f"Inhein badhakar 850-1000 akshar karo. Wahi {scene['speakers']} speakers, wahi baat, bas aur gehri behas, "
-        "chhote vakya, beech mein kaatna, aur asli bhaav jodo. Naya twist mat jodo. Sirf Devanagari.\n"
+        f"Inhein badhakar 850-1000 akshar karo — 10 se 14 lines, har line 8 se 16 shabd. "
+        f"Wahi {scene['speakers']} speakers, wahi baat, bas aur gehri behas, "
+        "beech mein kaatna, aur asli bhaav jodo. Naya twist mat jodo. Sirf Devanagari.\n"
         + json.dumps({"scene": scene, "plan_title": plan["title"]}, ensure_ascii=False)
         + '\nSirf JSON: {"lines":[{"speaker":"...","text":"...","emotion":"..."}]}'
     )
     try:
-        scene["lines"] = as_json(text_completion(prompt, 0.9))["lines"]
+        lines = lines_from(as_json(text_completion(prompt, 0.9)))
+        if lines is None:
+            raise RuntimeError("grow: JSON mein lines nahi mili")
+        scene["lines"] = lines
     except Exception as exc:
         print("grow skip:", str(exc)[:100])
     return repair(scene)
@@ -529,9 +609,7 @@ def main():
         print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
 
-    voice.api_key()
-    for character in CAST.values():
-        voice.resolve_voice_id(character["voice"])
+    voice.preflight(CAST)
     state_path = ROOT / "story_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     ep = state.get("episode", 1)
@@ -563,7 +641,7 @@ def main():
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", "family drama",
                  "kahaniyan", "hindi audio story", SERIES["series"], "emotional story"],
         "attribution": "Kirdar aur background: AI-generated original art. "
-                       "Dialogue performed with ElevenLabs. Story written with AI. "
+                       "Dialogue performed with neural AI voices. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
     }
