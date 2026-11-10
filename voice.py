@@ -38,9 +38,13 @@ def _request(path, body=None):
         headers={"xi-api-key": api_key(), "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=180) as response:
-            if body is not None and not response.headers.get("Content-Type", "").startswith("audio/"):
-                raise VoiceUnavailable("ElevenLabs returned non-audio content")
-            return response.read()
+            ctype = response.headers.get("Content-Type", "")
+            data = response.read()
+        if body is not None and not ctype.startswith("audio/"):
+            raise VoiceUnavailable(f"ElevenLabs returned non-audio ({ctype or 'no content-type'})")
+        if body is None and not ctype.startswith("application/json"):
+            raise VoiceUnavailable(f"ElevenLabs returned {ctype or 'no content-type'} instead of JSON; check key permissions")
+        return data
     except urllib.error.HTTPError as exc:
         raise VoiceUnavailable(f"ElevenLabs HTTP {exc.code}; check key, voice access and credits") from None
     except (urllib.error.URLError, TimeoutError):
@@ -49,10 +53,15 @@ def _request(path, body=None):
 
 @lru_cache(maxsize=1)
 def available_voices():
+    raw = _request("voices")
     try:
-        return json.loads(_request("voices"))["voices"]
-    except (ValueError, KeyError, TypeError):
-        raise VoiceUnavailable("ElevenLabs returned an invalid voice list") from None
+        data = json.loads(raw)
+    except ValueError:
+        raise VoiceUnavailable(f"ElevenLabs voices: unreadable response {raw[:120]!r}") from None
+    voices = data.get("voices") if isinstance(data, dict) else None
+    if not isinstance(voices, list):
+        raise VoiceUnavailable(f"ElevenLabs voices: unexpected response {raw[:120]!r}")
+    return voices
 
 
 def resolve_voice_id(name):

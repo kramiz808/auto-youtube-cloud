@@ -34,7 +34,11 @@ def main():
 
     try:
         mp3 = voice.speech_file("सुनो, मुझे तुमसे कुछ ज़रूरी बात कहनी है।", voice.DEFAULT_VOICE, "nervous")
-        print(f"speech: {mp3.name} {mp3.stat().st_size} bytes {story.media_duration(mp3):.1f}s")
+        try:
+            seconds = f"{story.media_duration(mp3):.1f}s"
+        except Exception:
+            seconds = "duration n/a"
+        print(f"speech: {mp3.name} {mp3.stat().st_size} bytes {seconds}")
     except Exception as exc:
         failures += 1
         print(f"speech: FAIL {exc}")
