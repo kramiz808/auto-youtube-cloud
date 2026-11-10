@@ -1,13 +1,24 @@
 """Live key check: OpenAI text + ElevenLabs voices/credits/one Hindi line. Prints nothing secret."""
 import json
+import os
 import sys
 
 import story
 import voice
 
 
+def key_shape(name):
+    value = os.environ.get(name, "")
+    odd = sum(1 for ch in value if ord(ch) > 126 or ch in "\r\n\t")
+    print(f"{name} shape: len={len(value)} edge_space={value != value.strip()} "
+          f"odd_chars={odd} sk_prefix={value.startswith('sk-') or value.startswith('sk_')}")
+
+
 def main():
     failures = 0
+
+    key_shape("OPENAI_API_KEY")
+    key_shape("ELEVENLABS_API_KEY")
 
     try:
         text = story.text_completion("Reply with the single word: ok", temperature=0, json_mode=False)
