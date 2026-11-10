@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Tool</title>
+<style>
+:root { --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --accent: #bb86fc; }
+body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+.nav { display: flex; gap: 10px; margin-bottom: 20px; overflow-x: auto; width: 100%; padding-bottom: 10px; }
+button { background: var(--card); color: var(--text); border: 1px solid #333; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+button.active { border-color: var(--accent); color: var(--accent); }
+.tool { display: none; width: 100%; max-width: 400px; background: var(--card); padding: 20px; border-radius: 12px; }
+.active-tool { display: block; }
+input, textarea { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; background: #333; color: white; box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+<button onclick="show('timer')" class="active">Timer</button>
+<button onclick="show('quiz')">Quiz</button>
+<button onclick="show('notes')">Notes</button>
+<button onclick="show('calc')">Calc</button>
+</div>
+
+<div id="timer" class="tool active-tool">
+<h3>Study Timer</h3>
+<h2 id="disp">25:00</h2>
+<button onclick="startTimer()">Start</button>
+</div>
+
+<div id="quiz" class="tool">
+<h3>Mini Quiz</h3>
+<p id="qText">2 + 2 = ?</p>
+<input id="ans" type="number">
+<button onclick="check()">Check</button>
+</div>
+
+<div id="notes" class="tool">
+<h3>Notes</h3>
+<textarea id="noteArea" rows="5" placeholder="Kuch likhein..."></textarea>
+<button onclick="saveNote()">Save</button>
+</div>
+
+<div id="calc" class="tool">
+<h3>Calculator</h3>
+<input id="res" readonly>
+<div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:5px;">
+<button onclick="v('1')">1</button><button onclick="v('2')">2</button><button onclick="v('3')">3</button><button onclick="calc()">=</button>
+</div>
+</div>
+
+<script>
+function show(id) {
+document.querySelectorAll('.tool').forEach(t => t.classList.remove('active-tool'));
+document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+document.getElementById(id).classList.add('active-tool');
+event.target.classList.add('active');
+}
+
+let time = 1500;
+function startTimer() {
+setInterval(() => {
+time--;
+let m = Math.floor(time/60);
+let s = time % 60;
+document.getElementById('disp').innerText = `${m}:${s < 10 ? '0'+s : s}`;
+}, 1000);
+}
+
+function check() {
+alert(document.getElementById('ans').value == 4 ? "Sahi!" : "Galat!");
+}
+
+function saveNote() {
+localStorage.setItem('note', document.getElementById('noteArea').value);
+alert("Saved!");
+}
+
+function v(n) { document.getElementById('res').value += n; }
+function calc() { document.getElementById('res').value = eval(document.getElementById('res').value); }
+</script>
+</body>
+</html>
