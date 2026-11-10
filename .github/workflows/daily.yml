@@ -42,9 +42,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install ffmpeg + Hindi font
+      - name: Ensure ffmpeg
         if: steps.win.outputs.due == 'true' || inputs.force == true
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core
+        run: command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       - name: Install Python deps
         if: steps.win.outputs.due == 'true' || inputs.force == true
@@ -61,6 +61,7 @@ jobs:
           restore-keys: tts-v1-${{ runner.os }}-
 
       - name: Run daily pipeline
+        timeout-minutes: 25
         if: steps.win.outputs.due == 'true' || inputs.force == true
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
@@ -73,9 +74,10 @@ jobs:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           FORCE: ${{ inputs.force && '1' || '0' }}
-        run: python daily.py
+        run: python -u daily.py
 
       - name: Run daily Hindi story (after 6 PM IST)
+        timeout-minutes: 75
         if: always() && steps.win.outputs.due == 'true' && steps.win.outputs.hour >= 18
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
@@ -87,7 +89,7 @@ jobs:
           TTS_PROVIDER: edge
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
-        run: python story.py
+        run: python -u story.py
 
       - name: Save TTS audio cache
         if: always() && hashFiles('work/elevenlabs/*.mp3', 'work/edge/*.mp3') != ''
@@ -112,7 +114,10 @@ jobs:
         run: |
           git config user.name "ai-employee"
           git config user.email "actions@github.com"
-          git add -A
+          for path in state.json story_state.json quota.json today.json output/posts.txt output/log.txt output/stories.txt; do
+            if [ -f "$path" ]; then git add -- "$path"; fi
+          done
+          git add -- output/episode-*.json apps-output/*.html 2>/dev/null || true
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "daily run $(date -u +%F)"
           for attempt in 1 2 3; do

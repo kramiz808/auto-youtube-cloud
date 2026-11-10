@@ -192,7 +192,8 @@ def dialogue_audio(turns, cast, out):
     if len(set(voices.values())) != len(voices):
         raise VoiceUnavailable("Each dialogue character must have a distinct voice")
     files = []
-    for turn in turns:
+    for index, turn in enumerate(turns, 1):
+        print(f"TTS line {index}/{len(turns)} ({voices[turn['speaker']]})", flush=True)
         mp3 = speech_file(turn["text"], voices[turn["speaker"]], turn.get("emotion", ""))
         wav = mp3.with_suffix(".wav")
         if not wav.exists():

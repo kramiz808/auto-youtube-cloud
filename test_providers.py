@@ -212,6 +212,66 @@ class ProviderTests(unittest.TestCase):
             upload.assert_not_called()
         self.assertEqual(state, {"scene_index": 2})
 
+    def test_teaser_generates_todays_plan_once_instead_of_repeating_yesterday(self):
+        state = {"episode": 3, "revealed": ["prior reveal"]}
+        (self.root / "story_state.json").write_text(json.dumps(state), encoding="utf-8")
+        (self.root / "episode-2000-01-01.json").write_text('{"episode":1}', encoding="utf-8")
+        with patch("teaser.ROOT", self.root), patch("teaser.OUT", self.root), \
+                patch("teaser.write_episode", return_value={"episode": 3}) as generate:
+            self.assertEqual(teaser.latest_plan(), {"episode": 3})
+            self.assertEqual(teaser.latest_plan(), {"episode": 3})
+            generate.assert_called_once_with(3, ["prior reveal"])
+
+    def test_published_teaser_does_not_suppress_full_episode(self):
+        with patch("pipeline.get_creds"), patch("googleapiclient.discovery.build") as build:
+            yt = build.return_value
+            yt.channels.return_value.list.return_value.execute.return_value = {
+                "items": [{"contentDetails": {"relatedPlaylists": {"uploads": "uploads"}}}]}
+            yt.playlistItems.return_value.list.return_value.execute.return_value = {
+                "items": [{"snippet": {"publishedAt": "2026-11-10T08:30:00Z",
+                "title": "Series teaser", "resourceId": {"videoId": "video"}}}]}
+            videos = yt.videos.return_value.list.return_value.execute
+            videos.return_value = {"items": [{"contentDetails": {"duration": "PT1M30S"}}]}
+            self.assertFalse(story.already_on_channel("2026-11-10", "Series"))
+            videos.return_value = {"items": [{"contentDetails": {"duration": "PT15M"}}]}
+            self.assertTrue(story.already_on_channel("2026-11-10", "Series"))
+
+    def test_two_short_slots_leave_room_for_daily_story(self):
+        self.assertEqual(daily.due_slots(13 * 60 + 59), [])
+        self.assertEqual(daily.due_slots(14 * 60), ["afternoon"])
+        self.assertEqual(daily.due_slots(18 * 60), ["afternoon", "evening"])
+        self.assertEqual(daily.due_slots(23 * 60), ["afternoon", "evening"])
+
+    def test_scene_manifest_preserves_dialogue_gaps_and_total_duration(self):
+        names = list(story.CAST)[:2]
+        scene = {"setting": "home", "lines": [
+            {"speaker": names[0], "emotion": "sad"},
+            {"speaker": names[1], "emotion": "angry"}]}
+        target = self.root / "scene.ffconcat"
+        with patch("story.WORK", self.root), patch("story.run") as encode:
+            result = story.scene_source(scene, [(0, 1), (1.16, 2.5)], 2.5, target)
+        self.assertEqual(result, target)
+        for call in encode.call_args_list:
+            command = call.args[0]
+            self.assertEqual(command[command.index("-frames:v") + 1], "1")
+        lines = target.read_text(encoding="utf-8").splitlines()
+        durations = [float(line.split()[1]) for line in lines if line.startswith("duration ")]
+        self.assertEqual(durations, [story.CARD, 1.16, 1.34, story.TAIL])
+        self.assertAlmostEqual(sum(durations), story.CARD + 2.5 + story.TAIL)
+        self.assertEqual(sum(line.startswith("file ") for line in lines), 5)
+
+    def test_gemini_default_and_json_contract(self):
+        self.network.side_effect = None
+        self.network.return_value = Response({"candidates": [{"finishReason": "STOP",
+            "content": {"parts": [{"text": '{"title":"ok"}'}]}}]})
+        with patch.dict(os.environ, {"TEXT_PROVIDER": "gemini", "GEMINI_API_KEY": "test-gemini",
+                                     "GEMINI_MODEL": ""}):
+            self.assertEqual(story.as_json(story.text_completion("Write JSON")), {"title": "ok"})
+        request = self.network.call_args.args[0]
+        self.assertIn("gemini-3.1-flash-lite:generateContent", request.full_url)
+        self.assertNotIn("test-gemini", request.full_url)
+        self.assertEqual(json.loads(request.data)["generationConfig"]["responseMimeType"], "application/json")
+
     def test_teaser_fails_before_writing_story_when_voice_key_missing(self):
         with patch.dict(os.environ, {"ELEVENLABS_API_KEY": ""}), patch("teaser.latest_plan") as plan:
             with self.assertRaises(voice.VoiceUnavailable):

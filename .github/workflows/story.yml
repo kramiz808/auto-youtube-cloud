@@ -2,8 +2,7 @@ name: Daily Hindi story (20-25 min)
 
 on:
   schedule:
-    - cron: '0 13,14,16,17 * * *'
-    - cron: '5 7,8,9 * * *'
+    - cron: '0 13,14 * * *'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +24,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        run: command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       - name: Install Python deps
         run: pip install -q -r requirements.txt
@@ -40,6 +39,7 @@ jobs:
           restore-keys: tts-v1-${{ runner.os }}-
 
       - name: Write story, narrate, render, upload
+        timeout-minutes: 75
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
           TEXT_PROVIDER: gemini
@@ -50,7 +50,7 @@ jobs:
           TTS_PROVIDER: edge
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
-        run: python story.py
+        run: python -u story.py
 
       - name: Save TTS audio cache
         if: always() && hashFiles('work/elevenlabs/*.mp3', 'work/edge/*.mp3') != ''

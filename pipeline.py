@@ -18,9 +18,9 @@ FFMPEG = shutil.which("ffmpeg") or str(_FF)
 FFPROBE = shutil.which("ffprobe") or str(_FF.with_name("ffprobe.exe" if platform.system() == "Windows" else "ffprobe"))
 
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, timeout=None):
     r = subprocess.run([str(c) for c in cmd], cwd=cwd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", timeout=timeout)
     if r.returncode != 0:
         raise RuntimeError(f"command failed: {cmd}\n{r.stderr[-2000:]}")
     return r.stdout
@@ -92,7 +92,9 @@ def upload(video_path, data):
     if creds is None:
         print("UPLOAD SKIPPED: YOUTUBE_TOKEN secret / token.json missing")
         return None
-    youtube = build("youtube", "v3", credentials=creds)
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+    youtube = build("youtube", "v3", http=AuthorizedHttp(creds, http=httplib2.Http(timeout=60)))
     body = {
         "snippet": {
             "title": data["title"][:100],

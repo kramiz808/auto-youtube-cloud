@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 
-SLOTS = (("morning", 7 * 60), ("afternoon", 14 * 60), ("evening", 17 * 60))
+SLOTS = (("afternoon", 14 * 60), ("evening", 18 * 60))
 
 
 def due_slots(minutes):
@@ -54,7 +54,7 @@ def post_slot(slot, today, state, run_no):
     """Ek slot ka short bana ke upload karo. Video id return, warna None."""
     slug = f"{today}-{run_no % 100:02d}"
     label = "series-teaser"
-    video, data = teaser.build(slug)
+    video, data = teaser.build(slug, slot)
     (ROOT / "today.json").write_text(
         json.dumps({**data, "slug": slug}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"VIDEO: {video}")

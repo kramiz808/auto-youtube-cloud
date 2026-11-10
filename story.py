@@ -1,5 +1,6 @@
 """Rozana Hindi audio-drama: recurring cast, characters aapas mein bolte hain, har scene ka alag footage."""
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -507,7 +508,7 @@ def char_frame(speaker, emotion, group):
     return None
 
 
-def scene_video(scene, timings, dur, total, out):
+def scene_source(scene, timings, dur, out):
     group = setting_group(scene.get("setting", "home"))
     plate = plate_for(scene.get("setting", "home"))
     shots = [(plate, CARD)]
@@ -515,52 +516,70 @@ def scene_video(scene, timings, dur, total, out):
     for i, ln in enumerate(scene["lines"]):
         end = starts[i + 1] if i + 1 < len(starts) else dur
         frame = char_frame(ln["speaker"], emotion_key(ln.get("emotion", "")), group)
-        shots.append((frame or plate, max(0.3, end - starts[i])))
+        shots.append((frame or plate, end - starts[i]))
     shots.append((plate, TAIL))
-    cmd = [FFMPEG, "-y"]
-    filters = []
-    for i, (still, sec) in enumerate(shots):
-        cmd += ["-loop", "1", "-t", f"{sec:.3f}", "-i", str(still)]
-        filters.append(
-            f"[{i}:v]crop=iw:ih*0.94:0:0,scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},setsar=1,fps={FPS},"
-            f"zoompan=z='min(1.16,1.03+0.0007*on)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d=1:s={W}x{H}:fps={FPS},format=yuv420p[v{i}]")
-    filters.append("".join(f"[v{i}]" for i in range(len(shots)))
-                   + f"concat=n={len(shots)}:v=1:a=0[v]")
-    cmd += ["-filter_complex", ";".join(filters), "-map", "[v]",
-            "-t", f"{total:.3f}", "-r", str(FPS),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p",
-            "-an", out]
-    run(cmd, cwd=WORK)
+    frames = WORK / "scene-frames"
+    frames.mkdir(exist_ok=True)
+    lines = ["ffconcat version 1.0"]
+    for still, seconds in shots:
+        digest = hashlib.sha256(still.read_bytes() + f"{W}x{H}".encode()).hexdigest()
+        frame = frames / f"{digest}.jpg"
+        if not frame.exists():
+            run([FFMPEG, "-y", "-i", still, "-vf",
+                 f"crop=iw:ih*0.94:0:0,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1",
+                 "-frames:v", "1", "-q:v", "2", "-threads", "1", frame], timeout=60)
+        path = frame.resolve().as_posix().replace("'", "'\\''")
+        lines.extend((f"file '{path}'", f"option framerate {FPS}", f"duration {seconds:.6f}"))
+    lines.extend((f"file '{path}'", f"option framerate {FPS}"))
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out
 
 
-def render_piece(clip, wav, ass, duration, out, face=False, grain=True):
-    shutil.copy(FONT, WORK / "dfont.ttf")
+def render_piece(clip, wav, ass, duration, out, face=False, grain=False):
+    font_dir = WORK / "render-fonts"
+    font_dir.mkdir(exist_ok=True)
+    shutil.copy(FONT, font_dir / "dfont.ttf")
     make_gradient()
     blur = ",boxblur=10:2" if face else ""
-    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS},"
-          "zoompan=z='1.04+0.05*sin(on/240)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=24,"
+    scale = ("" if clip.suffix == ".ffconcat" else
+             f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},")
+    hold = "1"
+    if clip.suffix == ".ffconcat":
+        seconds = [float(line.split()[1]) for line in clip.read_text(encoding="utf-8").splitlines()
+                   if line.startswith("duration ")]
+        counts, elapsed, previous = [], 0.0, 0
+        for sec in seconds:
+            elapsed += sec
+            end = round(elapsed * FPS)
+            counts.append(end - previous)
+            previous = end
+        for index in reversed(range(len(counts))):
+            hold = f"if(eq(in,{index}),{counts[index]},{hold})"
+    vf = (scale + "setsar=1,"
+          f"zoompan=z='1.04+0.05*sin(on/240)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d='{hold}':s={W}x{H}:fps={FPS},"
           f"eq=contrast=1.07:saturation=0.88:brightness=-0.045:gamma=0.98{blur}")
     if grain:
         vf += ",noise=alls=5:allf=t"
     graph = (
         f"[0:v]{vf}[base];"
         "[base][2:v]overlay=0:0:format=auto[g];"
-        f"[g]ass={ass.name}:fontsdir=.[v];"
+        f"[g]ass={ass.name}:fontsdir=render-fonts[v];"
         "[1:a]anull[a]"
     )
-    run([FFMPEG, "-y",
-         "-stream_loop", "-1", "-i", clip,
-         "-i", wav,
+    source = (["-f", "concat", "-safe", "0", "-i", clip] if clip.suffix == ".ffconcat"
+              else ["-loop", "1", "-framerate", str(FPS), "-i", clip])
+    started = time.monotonic()
+    print(f"render: {out.name} ({duration:.1f}s)", flush=True)
+    run([FFMPEG, "-y", "-filter_complex_threads", "2",
+         *source, "-i", wav,
          "-i", GRAD,
          "-filter_complex", graph,
          "-map", "[v]", "-map", "[a]",
          "-t", f"{duration:.3f}", "-r", str(FPS),
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
-         "-movflags", "+faststart", out], cwd=WORK)
+         "-c:v", "libx264", "-preset", "superfast", "-crf", "23", "-threads", "2",
+         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", out], cwd=WORK, timeout=600)
+    print(f"render done: {out.name} in {time.monotonic() - started:.1f}s", flush=True)
     return out
 
 
@@ -592,7 +611,7 @@ def build(plan, slug):
              "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1", wav])
         total = CARD + dur + TAIL
         ass = scene_ass(scene, timings, total, WORK / f"sc{i:02d}.ass")
-        sv = scene_video(scene, timings, dur, total, WORK / f"sv{i:02d}.mp4")
+        sv = scene_source(scene, timings, dur, WORK / f"scene{i:02d}.ffconcat")
         pieces.append(render_piece(sv, wav, ass, total, WORK / f"p{i:02d}.mp4"))
         timeline.append({"card": scene["card"], "seconds": round(total, 1), "lines": len(scene["lines"])})
         print(f"scene {i + 1}/{len(plan['scenes'])}: {total:.1f}s, {len(scene['lines'])} lines, {scene['card']}")
@@ -637,15 +656,26 @@ def already_on_channel(day, series):
     creds = get_creds()
     if creds is None:
         return False
-    yt = build("youtube", "v3", credentials=creds)
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+    yt = build("youtube", "v3", http=AuthorizedHttp(creds, http=httplib2.Http(timeout=60)))
     ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
     items = yt.playlistItems().list(
         playlistId=ch["contentDetails"]["relatedPlaylists"]["uploads"],
         part="snippet", maxResults=25).execute().get("items", [])
-    for it in items:
-        s = it.get("snippet", {})
-        if str(s.get("publishedAt", "")).startswith(day) and series in s.get("title", ""):
-            return True
+    candidates = [it["snippet"]["resourceId"]["videoId"] for it in items
+                  if str(it.get("snippet", {}).get("publishedAt", "")).startswith(day)
+                  and series in it.get("snippet", {}).get("title", "")]
+    if not candidates:
+        return False
+    videos = yt.videos().list(part="contentDetails", id=",".join(candidates)).execute()
+    for item in videos.get("items", []):
+        duration = item.get("contentDetails", {}).get("duration", "")
+        match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+        if match:
+            hours, minutes, seconds = (int(value or 0) for value in match.groups())
+            if hours * 3600 + minutes * 60 + seconds > 180:
+                return True
     return False
 
 
@@ -657,6 +687,7 @@ def main():
                             for l in log.read_text(encoding="utf-8").splitlines()):
         print("SKIP: aaj ka episode pehle hi upload ho chuka hai")
         sys.exit(0)
+    print("Checking channel for today's episode", flush=True)
     if already_on_channel(today, SERIES["series"]):
         print("SKIP: aaj ka episode channel par pehle se hai")
         sys.exit(0)

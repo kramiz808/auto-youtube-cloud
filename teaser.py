@@ -1,20 +1,25 @@
 """Daily short = series ka cold-open teaser: hook card, 6-line drama, CTA card.
 Profile kholne wala seedha episode playlist ki taraf jaye."""
+import datetime
 import json
 
 import voice
-from pipeline import FFMPEG, OUT, WORK, media_duration, run
+from pipeline import FFMPEG, OUT, ROOT, WORK, media_duration, run
 from story import (CARD, TAIL, CAST, SERIES, card_ass, scene_ass, silence, plate_for,
-                   scene_video, render_piece, finish, text_completion, as_json, repair)
+                   scene_source, render_piece, finish, text_completion, as_json, repair, write_episode)
 
 HOOK, CTA = 4.0, 4.0
 
 
 def latest_plan():
-    caches = sorted(OUT.glob("episode-*.json"))
-    if not caches:
-        return None
-    return json.loads(caches[-1].read_text(encoding="utf-8"))
+    cache = OUT / f"episode-{datetime.date.today().isoformat()}.json"
+    if cache.exists():
+        return json.loads(cache.read_text(encoding="utf-8"))
+    state_path = ROOT / "story_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    plan = write_episode(state.get("episode", 1), state.get("revealed", []))
+    cache.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    return plan
 
 
 def episode_link():
@@ -25,10 +30,10 @@ def episode_link():
     return eps[-1].split("youtu.be/")[-1].strip() if eps else ""
 
 
-def teaser_scene(plan):
+def teaser_scene(plan, slot="afternoon"):
     if plan:
         scene = dict(plan["scenes"][0])
-        scene["lines"] = scene["lines"][:6]
+        scene["lines"] = scene["lines"][:6] if slot == "afternoon" else scene["lines"][-6:]
         scene["episode"] = plan["episode"]
         return repair(scene), plan["episode"], plan.get("next_question", SERIES["tagline"])
     prompt = (
@@ -44,12 +49,12 @@ def teaser_scene(plan):
     return scene, 1, SERIES["tagline"]
 
 
-def build(slug):
+def build(slug, slot="afternoon"):
     voice.preflight(CAST)
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     plan = latest_plan()
-    scene, ep, hook = teaser_scene(plan)
+    scene, ep, hook = teaser_scene(plan, slot)
     turns = scene["lines"]
     raw = WORK / "teaser_raw.wav"
     timings = voice.dialogue_audio(turns, CAST, raw)
@@ -67,7 +72,7 @@ def build(slug):
     pieces = [render_piece(plate_for("home"), silence(HOOK, WORK / "te_hook.wav"), hook_ass,
                            HOOK, WORK / "te_p0.mp4", grain=False)]
     ass = scene_ass(scene, timings, total, WORK / "te_sc.ass")
-    sv = scene_video(scene, timings, dur, total, WORK / "te_sv.mp4")
+    sv = scene_source(scene, timings, dur, WORK / "te_scene.ffconcat")
     pieces.append(render_piece(sv, wav, ass, total, WORK / "te_p1.mp4"))
     cta_ass = card_ass("पूरी कहानी चैनल पर", f"{SERIES['series']} — एपिसोड {ep} से शुरू करो",
                        CTA, WORK / "te_cta.ass")
