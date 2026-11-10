@@ -114,10 +114,12 @@ jobs:
         run: |
           git config user.name "ai-employee"
           git config user.email "actions@github.com"
-          for path in state.json story_state.json quota.json today.json output/posts.txt output/log.txt output/stories.txt; do
+          for path in state.json story_state.json quota.json output/posts.txt output/log.txt output/stories.txt; do
+            if [ -f "$path" ] || git ls-files --error-unmatch "$path" >/dev/null 2>&1; then git add -- "$path"; fi
+          done
+          for path in output/episode-*.json apps-output/*.html; do
             if [ -f "$path" ]; then git add -- "$path"; fi
           done
-          git add -- output/episode-*.json apps-output/*.html 2>/dev/null || true
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "daily run $(date -u +%F)"
           for attempt in 1 2 3; do

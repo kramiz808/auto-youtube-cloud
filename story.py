@@ -656,9 +656,7 @@ def already_on_channel(day, series):
     creds = get_creds()
     if creds is None:
         return False
-    import httplib2
-    from google_auth_httplib2 import AuthorizedHttp
-    yt = build("youtube", "v3", http=AuthorizedHttp(creds, http=httplib2.Http(timeout=60)))
+    yt = build("youtube", "v3", credentials=creds)
     ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
     items = yt.playlistItems().list(
         playlistId=ch["contentDetails"]["relatedPlaylists"]["uploads"],

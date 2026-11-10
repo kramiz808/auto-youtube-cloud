@@ -92,9 +92,7 @@ def upload(video_path, data):
     if creds is None:
         print("UPLOAD SKIPPED: YOUTUBE_TOKEN secret / token.json missing")
         return None
-    import httplib2
-    from google_auth_httplib2 import AuthorizedHttp
-    youtube = build("youtube", "v3", http=AuthorizedHttp(creds, http=httplib2.Http(timeout=60)))
+    youtube = build("youtube", "v3", credentials=creds)
     body = {
         "snippet": {
             "title": data["title"][:100],

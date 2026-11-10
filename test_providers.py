@@ -212,6 +212,27 @@ class ProviderTests(unittest.TestCase):
             upload.assert_not_called()
         self.assertEqual(state, {"scene_index": 2})
 
+    def test_upload_uses_sdk_resumable_transport(self):
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build as build_client
+        import pipeline
+        video = self.root / "video.mp4"
+        video.write_bytes(b"test-video")
+        clients = []
+
+        def create(*args, **kwargs):
+            client = build_client(*args, **kwargs)
+            clients.append(client)
+            return client
+
+        with patch("pipeline.get_creds", return_value=Credentials(token="test-token")), \
+                patch("googleapiclient.discovery.build", side_effect=create), \
+                patch("googleapiclient.http.HttpRequest.next_chunk", return_value=(None, {"id": "test-id"})):
+            self.assertEqual(pipeline.upload(video, {"title": "test"}), "test-id")
+        transport = clients[0]._http.http
+        self.assertNotIn(308, transport.redirect_codes)
+        self.assertIsNotNone(transport.timeout)
+
     def test_teaser_generates_todays_plan_once_instead_of_repeating_yesterday(self):
         state = {"episode": 3, "revealed": ["prior reveal"]}
         (self.root / "story_state.json").write_text(json.dumps(state), encoding="utf-8")

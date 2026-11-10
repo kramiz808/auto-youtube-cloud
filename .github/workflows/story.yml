@@ -75,9 +75,9 @@ jobs:
         run: |
           git config user.name "ai-employee"
           git config user.email "actions@github.com"
-          if [ -f story_state.json ]; then git add story_state.json; fi
-          if [ -f output/stories.txt ]; then git add output/stories.txt; fi
-          git add output/episode-*.json 2>/dev/null || true
+          for path in story_state.json quota.json output/stories.txt output/episode-*.json; do
+            if [ -f "$path" ] || git ls-files --error-unmatch "$path" >/dev/null 2>&1; then git add -- "$path"; fi
+          done
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "daily story $(date -u +%F)"
           for attempt in 1 2 3; do
