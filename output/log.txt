@@ -21,3 +21,4 @@
 2026-11-09 | assets/scenes/sintel_01.mp4 | hook=जिसका कोई नहीं होता, वो सबसे ज़्यादा लड़ता है | youtube_id=TalZJb8hi-g | 2026-11-09-01.mp4
 2026-11-09 | assets/scenes/sintel_03.mp4 | hook=तुम हारे नहीं, बस मंज़िल के पास थे | youtube_id=XPXP-_c2xXI | 2026-11-09-02.mp4
 2026-11-10 | series-teaser | youtube_id=wiMz2bcotgc | 2026-11-10-03.mp4
+2026-11-10 | series-teaser | youtube_id=lPsCBzvwN64 | 2026-11-10-04.mp4
