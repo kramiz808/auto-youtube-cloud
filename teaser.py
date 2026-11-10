@@ -5,7 +5,7 @@ import json
 import voice
 from pipeline import FFMPEG, OUT, WORK, media_duration, run
 from story import (CARD, TAIL, CAST, SERIES, card_ass, scene_ass, silence, plate_for,
-                   scene_video, render_piece, finish, gemini, as_json, repair, WRITE_MODELS)
+                   scene_video, render_piece, finish, text_completion, as_json, repair)
 
 HOOK, CTA = 4.0, 4.0
 
@@ -40,20 +40,22 @@ def teaser_scene(plan):
         'Sirf JSON: {"card":"jagah — samay","setting":"home","speakers":["नाम","नाम"],'
         '"lines":[{"speaker":"...","text":"...","emotion":"..."}]}'
     )
-    scene = repair(as_json(gemini(prompt, WRITE_MODELS, 0.95)))
+    scene = repair(as_json(text_completion(prompt, 0.95)))
     return scene, 1, SERIES["tagline"]
 
 
 def build(slug):
+    voice.api_key()
+    for character in CAST.values():
+        voice.resolve_voice_id(character["voice"])
     WORK.mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
     plan = latest_plan()
     scene, ep, hook = teaser_scene(plan)
     turns = scene["lines"]
     raw = WORK / "teaser_raw.wav"
-    voice.dialogue_audio(turns, CAST, raw)
+    timings = voice.dialogue_audio(turns, CAST, raw)
     dur = media_duration(raw)
-    timings = voice.align_lines(turns, dur, voice.silence_gaps(raw))
     lead = silence(CARD, WORK / "te_lead.wav")
     tail = silence(TAIL, WORK / "te_tail.wav")
     lst = WORK / "te_lst.txt"
@@ -93,7 +95,7 @@ def build(slug):
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", SERIES["series"],
                  "kahaniyan", "emotional story", "shorts"],
         "attribution": "Kirdar aur background: AI-generated original art. "
-                       "Dialogue performed with Gemini TTS. Story written with AI. "
+                       "Dialogue performed with ElevenLabs. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
     }

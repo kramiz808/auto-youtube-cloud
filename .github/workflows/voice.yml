@@ -1,8 +1,6 @@
 name: Hindi voice cache
 
 on:
-  schedule:
-    - cron: '5 2,8,14,20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +29,7 @@ jobs:
 
       - name: Fill missing Hindi lines
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: python fill_voice.py
 
       - name: Commit new voice lines

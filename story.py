@@ -1,10 +1,10 @@
 """Rozana Hindi audio-drama: recurring cast, characters aapas mein bolte hain, har scene ka alag footage."""
 import datetime
 import json
+import os
 import re
 import shutil
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -20,8 +20,6 @@ SLUG = {"सावित्री": "savitri", "आरव": "aarav", "मीर�
 GHAR = {"home", "family", "phone", "mother", "woman", "sad-woman", "cry",
         "man-thinking", "hospital", "rain"}
 
-PLAN_MODELS = ["gemini-flash-lite-latest", "gemini-3-flash-preview"]
-WRITE_MODELS = ["gemini-3-flash-preview", "gemini-flash-lite-latest"]
 MUSIC = ROOT / "assets" / "music" / "soft.mp3"
 FONT = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
 GRAD = ROOT / "assets" / "story" / "grad.png"
@@ -33,37 +31,59 @@ SCENES = 10
 CHARS_PER_SCENE = (780, 1050)
 
 
-def key():
-    path = ROOT / "gemini_key.txt"
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    import os
-    return os.environ.get("GEMINI_API_KEY", "").strip()
+def text_completion(prompt, temperature=1.0, json_mode=True):
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        try:
+            api_key = (ROOT / "secrets" / "openai_key.txt").read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError):
+            raise RuntimeError("OpenAI: key unavailable") from None
+    if not api_key:
+        raise RuntimeError("OpenAI: missing API key (OPENAI_API_KEY or secrets/openai_key.txt)")
 
+    messages = []
+    if json_mode:
+        messages.append({"role": "system", "content": "Return only a valid JSON object."})
+    messages.append({"role": "user", "content": prompt})
+    payload = {
+        "model": os.environ.get("OPENAI_MODEL", "").strip() or "gpt-4o-mini",
+        "messages": messages,
+        "max_tokens": 16000,
+        "temperature": temperature,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    body = json.dumps(payload).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions", data=body, method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
+        with urllib.request.urlopen(req, timeout=240) as response:
+            resp = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"OpenAI HTTP {exc.code}") from None
+    except (urllib.error.URLError, OSError):
+        raise RuntimeError("OpenAI: request failed") from None
+    except ValueError:
+        raise RuntimeError("OpenAI: invalid request or response") from None
 
-def gemini(prompt, models, temperature=1.0):
-    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"temperature": temperature,
-                                            "maxOutputTokens": 16000}}).encode("utf-8")
-    last = ""
-    for model in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key()}"
-        for attempt in range(2):
-            try:
-                req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-                resp = json.loads(urllib.request.urlopen(req, timeout=240).read())
-                return resp["candidates"][0]["content"]["parts"][0]["text"]
-            except urllib.error.HTTPError as exc:
-                last = f"{exc.code} {exc.read()[:160].decode('utf-8', 'replace')}"
-                print("gemini", model, last[:140])
-                if exc.code in (400, 404):
-                    break
-                time.sleep(15 * (attempt + 1))
-            except Exception as exc:
-                last = str(exc)[:160]
-                print("gemini retry", model, last)
-                time.sleep(15 * (attempt + 1))
-    raise RuntimeError(f"story text fail: {last}")
+    try:
+        choice = resp["choices"][0]
+        message = choice["message"]
+        content = message.get("content")
+        refused = message.get("refusal")
+        finish_reason = choice.get("finish_reason")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        raise RuntimeError("OpenAI: invalid response") from None
+    if refused:
+        raise RuntimeError("OpenAI: response refused")
+    if finish_reason != "stop":
+        raise RuntimeError("OpenAI: incomplete response")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("OpenAI: empty response")
+    return content
 
 
 def as_json(text):
@@ -107,7 +127,7 @@ def plan_episode(ep, revealed):
         '{"title":"...","logline":"...","scenes":[{"card":"jagah — samay","setting":"home","speakers":["आरव","सावित्री"],"beat":"is scene mein kya hota hai"}],'
         '"reveal":"is episode mein kya naya sach saamne aaya","cliffhanger":"aakhri adhoora pal","next_question":"agle episode ka sawaal"}'
     )
-    plan = as_json(gemini(prompt, PLAN_MODELS, 1.0))
+    plan = as_json(text_completion(prompt, 1.0))
     plan["scenes"] = plan["scenes"][:SCENES]
     plan["episode"] = ep
     return plan
@@ -133,7 +153,7 @@ def write_batch(plan, indices, tail):
         "- Jaankari dialogue se bahar aaye, summary se nahi. Koi kirdar apna parichay nahi dega.\n\n"
         'Sirf JSON do: {"scenes":[{"lines":[{"speaker":"naam","text":"...","emotion":"is line ka bhaav, English mein ek chhota phrase"}]}]}'
     )
-    got = as_json(gemini(prompt, WRITE_MODELS, 0.95))["scenes"]
+    got = as_json(text_completion(prompt, 0.95))["scenes"]
     out = []
     for i, scene in enumerate(wanted):
         lines = got[i]["lines"] if i < len(got) else []
@@ -173,7 +193,7 @@ def grow(scene, plan):
         + '\nSirf JSON: {"lines":[{"speaker":"...","text":"...","emotion":"..."}]}'
     )
     try:
-        scene["lines"] = as_json(gemini(prompt, WRITE_MODELS, 0.9))["lines"]
+        scene["lines"] = as_json(text_completion(prompt, 0.9))["lines"]
     except Exception as exc:
         print("grow skip:", str(exc)[:100])
     return repair(scene)
@@ -415,7 +435,6 @@ def build(plan, slug):
     drama = WORK / "drama"
     drama.mkdir(exist_ok=True)
     pieces, timeline = [], []
-    models = voice.DRAMA_MODELS
 
     intro_wav = silence(INTRO, WORK / "intro.wav")
     intro_ass = card_ass(f"{SERIES['series']}\nएपिसोड {plan['episode']}", plan["title"],
@@ -426,26 +445,16 @@ def build(plan, slug):
     for i, scene in enumerate(plan["scenes"]):
         scene["episode"] = plan["episode"]
         wav = drama / f"s{i:02d}.wav"
-        meta_path = drama / f"s{i:02d}.json"
-        if not wav.exists():
-            turns = scene["lines"]
-            k = i % len(models)
-            order = models[k:] + models[:k]
-            raw = drama / f"s{i:02d}_raw.wav"
-            voice.dialogue_audio(turns, CAST, raw, models=order)
-            dur = media_duration(raw)
-            timings = voice.align_lines(turns, dur, voice.silence_gaps(raw))
-            lead = silence(CARD, WORK / f"lead{i}.wav")
-            tail = silence(TAIL, WORK / f"tail{i}.wav")
-            lst = WORK / f"lst{i}.txt"
-            lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in (lead, raw, tail)), encoding="utf-8")
-            run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", lst,
-                 "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1", wav])
-            meta_path.write_text(json.dumps({"duration": dur, "timings": timings}, ensure_ascii=False),
-                                 encoding="utf-8")
-        else:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            dur, timings = meta["duration"], [tuple(t) for t in meta["timings"]]
+        turns = scene["lines"]
+        raw = drama / f"s{i:02d}_raw.wav"
+        timings = voice.dialogue_audio(turns, CAST, raw)
+        dur = media_duration(raw)
+        lead = silence(CARD, WORK / f"lead{i}.wav")
+        tail = silence(TAIL, WORK / f"tail{i}.wav")
+        lst = WORK / f"lst{i}.txt"
+        lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in (lead, raw, tail)), encoding="utf-8")
+        run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", lst,
+             "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "1", wav])
         total = CARD + dur + TAIL
         ass = scene_ass(scene, timings, total, WORK / f"sc{i:02d}.ass")
         sv = scene_video(scene, timings, dur, total, WORK / f"sv{i:02d}.mp4")
@@ -520,6 +529,9 @@ def main():
         print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
 
+    voice.api_key()
+    for character in CAST.values():
+        voice.resolve_voice_id(character["voice"])
     state_path = ROOT / "story_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     ep = state.get("episode", 1)
@@ -551,7 +563,7 @@ def main():
         "tags": ["hindi kahani", "audio drama", "hindi suspense story", "family drama",
                  "kahaniyan", "hindi audio story", SERIES["series"], "emotional story"],
         "attribution": "Kirdar aur background: AI-generated original art. "
-                       "Dialogue performed with Gemini TTS. Story written with AI. "
+                       "Dialogue performed with ElevenLabs. Story written with AI. "
                        "Sabhi kirdar aur ghatnayein kalpanik hain.",
         "privacy": "public",
     }

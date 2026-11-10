@@ -50,11 +50,21 @@ jobs:
         if: steps.win.outputs.due == 'true' || inputs.force == true
         run: pip install -q -r requirements.txt
 
+      - name: Restore ElevenLabs audio cache
+        if: steps.win.outputs.due == 'true' || inputs.force == true
+        uses: actions/cache/restore@v4
+        with:
+          path: work/elevenlabs
+          key: elevenlabs-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: elevenlabs-v1-${{ runner.os }}-
+
       - name: Run daily pipeline
         if: steps.win.outputs.due == 'true' || inputs.force == true
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           FORCE: ${{ inputs.force && '1' || '0' }}
         run: python daily.py
@@ -63,9 +73,18 @@ jobs:
         if: always() && steps.win.outputs.due == 'true' && steps.win.outputs.hour >= 18
         env:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
         run: python story.py
+
+      - name: Save ElevenLabs audio cache
+        if: always() && hashFiles('work/elevenlabs/*.mp3') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: work/elevenlabs
+          key: elevenlabs-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload video artifact
         if: always() && (steps.win.outputs.due == 'true' || inputs.force == true)

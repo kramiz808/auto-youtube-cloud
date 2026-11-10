@@ -1,4 +1,4 @@
-"""Pre-generate missing Hindi dub lines inside the free TTS quota so posting runs never wait."""
+"""Pre-generate missing Hindi dub lines with ElevenLabs."""
 import json
 from pathlib import Path
 
