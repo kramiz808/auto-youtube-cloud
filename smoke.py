@@ -28,21 +28,12 @@ def main():
 
     try:
         voice.preflight(story.CAST)
-        print("voices: " + ", ".join(
-            str(c.get("edge_voice") or c["voice"]) for c in story.CAST.values()))
+        for index, person in enumerate(story.CAST.values(), 1):
+            mp3 = voice.speech_file("सुनो, अब बोलो।", person.get("edge_voice") or person["voice"], "tense")
+            print(f"voice {index}: {mp3.name} {mp3.stat().st_size} bytes")
     except Exception as exc:
         failures += 1
         print(f"voices: FAIL {exc}")
-
-    try:
-        timings = voice.dialogue_audio(
-            [{"speaker": "आरव", "text": "सुनो, मुझे तुमसे कुछ ज़रूरी बात कहनी है।", "emotion": "tense"},
-             {"speaker": "सावित्री", "text": "अब क्या हुआ? बोलो।", "emotion": "sad"}],
-            story.CAST, voice.WORK / "smoke_dialogue.wav")
-        print(f"speech: ok {len(timings)} lines {timings[-1][1]:.1f}s")
-    except Exception as exc:
-        failures += 1
-        print(f"speech: FAIL {exc}")
 
     print(f"smoke failures: {failures}")
     return 1 if failures else 0
