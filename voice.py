@@ -43,7 +43,8 @@ def mood_tag(emotion):
 
 
 async def _edge_save(edge_tts, text, voice, rate, pitch, path):
-    await edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(str(path))
+    await asyncio.wait_for(edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(str(path)),
+                           timeout=60)
 
 
 def edge_speech(text, voice, emotion=""):
