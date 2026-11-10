@@ -50,7 +50,7 @@ def gemini_key():
 
 
 def gemini_completion(prompt, temperature=1.0, json_mode=True):
-    model = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3-flash-preview"
+    model = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.1-flash-lite"
     config = {"temperature": temperature, "maxOutputTokens": 16000}
     if json_mode:
         config["responseMimeType"] = "application/json"
@@ -148,12 +148,53 @@ def text_completion(prompt, temperature=1.0, json_mode=True):
     return content
 
 
+CLOSE_AFTER = ",}]:"
+
+
+def repair_json(text):
+    out, in_string, escaped = [], False, False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                out.append(ch)
+                escaped = False
+            elif ch == "\\":
+                out.append(ch)
+                escaped = True
+            elif ch == '"':
+                j = i + 1
+                while j < len(text) and text[j] in " \t\r\n":
+                    j += 1
+                if j < len(text) and text[j] in CLOSE_AFTER:
+                    out.append(ch)
+                    in_string = False
+                else:
+                    out.append('\\"')
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                continue
+            elif ch == "\t":
+                out.append("\\t")
+            else:
+                out.append(ch)
+        else:
+            out.append(ch)
+            if ch == '"':
+                in_string = True
+    return "".join(out)
+
+
 def as_json(text):
     text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise RuntimeError("model ne JSON nahi diya")
-    return json.loads(text[start:end + 1])
+    body = text[start:end + 1]
+    try:
+        return json.loads(body)
+    except ValueError:
+        return json.loads(repair_json(body))
 
 
 def devanagari_ratio(text):
@@ -189,7 +230,14 @@ def plan_episode(ep, revealed):
         '{"title":"...","logline":"...","scenes":[{"card":"jagah — samay","setting":"home","speakers":["आरव","सावित्री"],"beat":"is scene mein kya hota hai"}],'
         '"reveal":"is episode mein kya naya sach saamne aaya","cliffhanger":"aakhri adhoora pal","next_question":"agle episode ka sawaal"}'
     )
-    plan = as_json(text_completion(prompt, 1.0))
+    for attempt in range(3):
+        try:
+            plan = as_json(text_completion(prompt, 1.0))
+            break
+        except (RuntimeError, ValueError) as exc:
+            if attempt == 2:
+                raise
+            print("plan retry:", str(exc)[:90])
     plan["scenes"] = plan["scenes"][:SCENES]
     plan["episode"] = ep
     return plan
@@ -215,7 +263,14 @@ def write_batch(plan, indices, tail):
         "- Jaankari dialogue se bahar aaye, summary se nahi. Koi kirdar apna parichay nahi dega.\n\n"
         'Sirf JSON do: {"scenes":[{"lines":[{"speaker":"naam","text":"...","emotion":"is line ka bhaav, English mein ek chhota phrase"}]}]}'
     )
-    got = as_json(text_completion(prompt, 0.95))["scenes"]
+    for attempt in range(3):
+        try:
+            got = as_json(text_completion(prompt, 0.95))["scenes"]
+            break
+        except (RuntimeError, ValueError, KeyError, TypeError) as exc:
+            if attempt == 2:
+                raise
+            print("batch retry:", str(exc)[:90])
     out = []
     for i, scene in enumerate(wanted):
         lines = got[i]["lines"] if i < len(got) else []
