@@ -17,8 +17,8 @@ SUB_SIZE, SUB_Y, SUB_LH = 44, 1230, 60
 MARK_Y = 1590
 
 CAST = {
-    "निशा": {"voice": "hi-IN-SwaraNeural", "rate": "+2%", "pitch": "+2Hz"},
-    "वृद्ध": {"voice": "hi-IN-MadhurNeural", "rate": "-8%", "pitch": "-8Hz"},
+    "निशा": {"voice": "hi-IN-SwaraNeural", "rate": "+0%", "pitch": "+0Hz"},
+    "वृद्ध": {"voice": "hi-IN-MadhurNeural", "rate": "-4%", "pitch": "-6Hz"},
 }
 
 SAGA = {
@@ -79,6 +79,15 @@ CLIPS = {
 
 ATTRIBUTION = ('Footage: "Sintel" (2010) by Blender Foundation (durian.blender.org), '
                'licensed CC-BY 3.0. Original Hindi dialogue, story and voice by this channel.')
+
+# Normalised (x, y) centre of each speaker in the strip, used to punch-in on whoever is talking.
+FOCUS = {
+    "sintel_01": {"निशा": (0.30, 0.45), "वृद्ध": (0.80, 0.45)},
+    "sintel_02": {"निशा": (0.45, 0.50), "वृद्ध": (0.50, 0.50)},
+    "sintel_03": {"निशा": (0.25, 0.50), "वृद्ध": (0.75, 0.45)},
+    "sintel_04": {"निशा": (0.45, 0.50), "वृद्ध": (0.60, 0.50)},
+}
+PUNCH_Z = 1.5
 
 
 def wrap(text, width):
@@ -176,10 +185,19 @@ lines की संख्या और क्रम समय-खंडों �
     return data
 
 
+def _shift(base, delta, suffix):
+    b = int(base.replace(suffix, "").replace("+", ""))
+    d = int(delta.replace(suffix, "").replace("+", ""))
+    return f"{b + d:+d}{suffix}"
+
+
 def line_audio(index, line):
     cast = CAST[line["speaker"]]
-    return voice.edge_speech(line["text"], cast["voice"], line.get("emotion", ""),
-                             rate=cast["rate"], pitch=cast["pitch"])
+    emotion = line.get("emotion", "")
+    tag = voice.mood_tag(emotion)
+    rate = _shift(cast["rate"], voice.EDGE_RATE.get(tag, "+0%"), "%")
+    pitch = _shift(cast["pitch"], voice.EDGE_PITCH.get(tag, "+0Hz"), "Hz")
+    return voice.edge_speech(line["text"], cast["voice"], emotion, rate=rate, pitch=pitch)
 
 
 def build_dub(clip, script, out):
@@ -231,16 +249,37 @@ def build(clip_key, slug=None, day=None, out=None):
         f"drawtext=fontfile=cfont.ttf:text='|  Z I D D I  |':fontcolor=0x9A9A9A:fontsize=24:"
         f"x=(w-text_w)/2:y={MARK_Y}")
 
+    focus = FOCUS[clip_key]
+    zw, zh = int(STRIP_W * PUNCH_Z), int(STRIP_H * PUNCH_Z)
+    grade = "eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08"
+
+    def punch(src, dst, speaker):
+        cx, cy = focus.get(speaker, (0.5, 0.5))
+        x = min(max(int(cx * zw - STRIP_W / 2), 0), zw - STRIP_W)
+        y = min(max(int(cy * zh - STRIP_H / 2), 0), zh - STRIP_H)
+        return (f"[{src}]scale={zw}:{zh}:force_original_aspect_ratio=increase,"
+                f"crop={zw}:{zh},crop={STRIP_W}:{STRIP_H}:{x}:{y},setsar=1,{grade}[{dst}]")
+
+    def enable_for(speaker):
+        terms = [f"between(t,{l['start']:.2f},{l['end']:.2f})"
+                 for l in script["lines"] if l["speaker"] == speaker]
+        return "+".join(terms) or "0"
+
     graph = (
-        f"[1:v]split=2[bgsrc][stsrc];"
+        f"[1:v]split=4[bgsrc][wsrc][nsrc][vsrc];"
         f"[bgsrc]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
         f"boxblur=6:1,scale={W}:{H},eq=brightness=-0.10:saturation=1.20:contrast=1.05[bg];"
-        f"[stsrc]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
-        f"crop={STRIP_W}:{STRIP_H},setsar=1,"
-        f"eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08[v0];"
-        f"[bg][v0]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)},vignette=PI/5[v];"
+        f"[wsrc]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
+        f"crop={STRIP_W}:{STRIP_H},setsar=1,{grade}[v0];"
+        + punch("nsrc", "vn", "निशा") + ";"
+        + punch("vsrc", "vv", "वृद्ध") + ";"
+        + f"[v0][vn]overlay=0:0:enable='{enable_for('निशा')}'[p1];"
+        + f"[p1][vv]overlay=0:0:enable='{enable_for('वृद्ध')}'[vstrip];"
+        + f"[bg][vstrip]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)},vignette=PI/5[v];"
         "[2:a]aresample=48000,aformat=channel_layouts=stereo,"
-        "highpass=f=90,lowpass=f=11000,equalizer=f=3000:t=q:w=1.2:g=2,"
+        "highpass=f=90,lowpass=f=11000,equalizer=f=200:t=q:w=1:g=1.5,"
+        "equalizer=f=3000:t=q:w=1.2:g=2,deesser=i=0.25,"
+        "vibrato=f=5.5:d=0.02,vibrato=f=0.7:d=0.015,"
         "acompressor=threshold=0.12:ratio=3:attack=8:release=180:makeup=1.3,"
         "aecho=0.8:0.22:35:0.15,volume=1.2,asplit=3[voc][scA][scB];"
         "[1:a]lowpass=f=900,volume=0.5,aresample=48000,aformat=channel_layouts=stereo[amb];"
