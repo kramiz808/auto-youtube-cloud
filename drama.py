@@ -157,7 +157,7 @@ def write_chapter(clip_key, saga_state=""):
 - लाइन का मकसद किरदार की मौजूदा हालत से जुड़ा हो — जैसे वो चेहरा, वो हथियार, वो डर।
 - भावनात्मक, कसी हुई, सीधी बात। कोई लंबा भाषण नहीं।
 - हर लाइन के लिए "emotion" भी बताओ: calm, sad, nervous, angry, determined या whispers में से एक।
-- JSON में लौटाओ: {{"title": "क्लिक-वर्टी हिंदी टाइटल #shorts", "hook": "ऊपर दिखने वाला 2-3 वाक्य का हुक",
+- JSON में लौटाओ: {{"title": "क्लिक-वर्टी हिंदी टाइटल #shorts", "hook": "ऊपर दिखने वाला हुक, अधिकतम 70 अक्षर, 2 लाइन",
 "description": "हिंदी में 2 लाइन का description", "hashtags": "#shorts #hindi ...",
 "lines": [{{"speaker": "निशा या वृद्ध", "text": "...", "emotion": "..."}}]}}
 lines की संख्या और क्रम समय-खंडों के बराबर होना चाहिए।"""
@@ -188,7 +188,8 @@ def build_dub(clip, script, out):
         mp3 = line_audio(index, line)
         dur = media_duration(mp3)
         slot = float(line["end"]) - float(line["start"])
-        speed = max(1.0, min(dur / max(slot, 0.4), 1.6))
+        # Exact-fit: voice spans the whole mouth-window so lips and audio stay locked.
+        speed = max(0.9, min(dur / max(slot, 0.4), 1.3))
         ms = int(round(float(line["start"]) * 1000))
         parts.append(f"[{index}:a]atempo={speed:.3f},aresample=48000,"
                      f"aformat=sample_fmts=fltp:channel_layouts=stereo,adelay={ms}|{ms}[d{index}]")
@@ -212,7 +213,10 @@ def build(clip_key, slug=None, day=None, out=None):
     dub = build_dub(clip, script, WORK / "drama_dub.wav")
 
     filters = []
-    for j, line in enumerate(wrap(script["hook"], 20)[:3]):
+    hook = script["hook"]
+    if len(hook) > 72:
+        hook = hook[:72].rsplit(" ", 1)[0] + "…"
+    for j, line in enumerate(wrap(hook, 24)[:3]):
         (WORK / f"dhook_{j}.txt").write_text(line, encoding="utf-8")
         filters.append(_drawtext(f"dhook_{j}", HOOK_SIZE, HOOK_Y + j * HOOK_LH,
                                  alpha="min(1,t/0.5)"))
@@ -228,15 +232,22 @@ def build(clip_key, slug=None, day=None, out=None):
         f"x=(w-text_w)/2:y={MARK_Y}")
 
     graph = (
-        f"[1:v]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
+        f"[1:v]split=2[bgsrc][stsrc];"
+        f"[bgsrc]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+        f"boxblur=6:1,scale={W}:{H},eq=brightness=-0.10:saturation=1.20:contrast=1.05[bg];"
+        f"[stsrc]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
         f"crop={STRIP_W}:{STRIP_H},setsar=1,"
         f"eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08[v0];"
-        f"[0:v][v0]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)}[v];"
-        "[2:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.15,asplit=2[voc][sc];"
-        "[1:a]lowpass=f=320,volume=0.30,aresample=48000,aformat=channel_layouts=stereo[amb];"
-        "[3:a]volume=0.28,aresample=48000,aformat=channel_layouts=stereo[mus];"
-        "[mus][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[duck];"
-        "[duck][amb]amix=inputs=2:duration=first:normalize=0[bed];"
+        f"[bg][v0]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)},vignette=PI/5[v];"
+        "[2:a]aresample=48000,aformat=channel_layouts=stereo,"
+        "highpass=f=90,lowpass=f=11000,equalizer=f=3000:t=q:w=1.2:g=2,"
+        "acompressor=threshold=0.12:ratio=3:attack=8:release=180:makeup=1.3,"
+        "aecho=0.8:0.22:35:0.15,volume=1.2,asplit=3[voc][scA][scB];"
+        "[1:a]lowpass=f=900,volume=0.5,aresample=48000,aformat=channel_layouts=stereo[amb];"
+        "[amb][scA]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=350[ambduck];"
+        "[3:a]volume=0.20,aresample=48000,aformat=channel_layouts=stereo[mus];"
+        "[mus][scB]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[musduck];"
+        "[ambduck][musduck]amix=inputs=2:duration=first:normalize=0[bed];"
         "[bed][voc]amix=inputs=2:duration=first:normalize=0,"
         "alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
 
