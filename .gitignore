@@ -5,6 +5,7 @@ ig_token.txt
 auth_setup.py
 work/
 output/*.mp4
+output/drama/
 today.json
 __pycache__/
 output/*.html

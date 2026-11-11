@@ -47,10 +47,10 @@ async def _edge_save(edge_tts, text, voice, rate, pitch, path):
                            timeout=60)
 
 
-def edge_speech(text, voice, emotion=""):
+def edge_speech(text, voice, emotion="", rate=None, pitch=None):
     tag = mood_tag(emotion)
-    rate = EDGE_RATE.get(tag, "+0%")
-    pitch = EDGE_PITCH.get(tag, "+0Hz")
+    rate = rate if rate is not None else EDGE_RATE.get(tag, "+0%")
+    pitch = pitch if pitch is not None else EDGE_PITCH.get(tag, "+0Hz")
     fingerprint = json.dumps({"voice": voice, "text": text, "rate": rate, "pitch": pitch},
                              ensure_ascii=False, sort_keys=True).encode("utf-8")
     cache = WORK / "edge"

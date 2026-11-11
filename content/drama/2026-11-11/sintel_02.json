@@ -1,0 +1,44 @@
+{
+  "title": "ज़िद की राह: माँ की आखिरी उम्मीद",
+  "hook": "एक लड़की, एक ड्रैगन और मौत के साये में छिपी एक दवा। क्या निशा अपनी माँ की जान बचा पाएगी?",
+  "description": "पहाड़ों के दुर्गम रास्तों पर निशा की जानलेवा दौड़। देखिए क्या उसकी ज़िद कुदरत के आगे जीत पाएगी या नहीं।",
+  "hashtags": "#shorts #hindi #animation #zidkirah #emotionalstory",
+  "lines": [
+    {
+      "speaker": "निशा",
+      "text": "घबराओ मत, मैं बस पट्टी बाँध रही हूँ।",
+      "emotion": "calm",
+      "start": 12.25,
+      "end": 15.5
+    },
+    {
+      "speaker": "निशा",
+      "text": "अब तुम्हें दर्द नहीं होगा।",
+      "emotion": "calm",
+      "start": 15.75,
+      "end": 18.5
+    },
+    {
+      "speaker": "निशा",
+      "text": "माँ के लिए ये दवा पहुँचाना बहुत ज़रूरी है।",
+      "emotion": "determined",
+      "start": 33.25,
+      "end": 37.25
+    },
+    {
+      "speaker": "निशा",
+      "text": "मेरे साथ चलो, रुकना मौत है।",
+      "emotion": "nervous",
+      "start": 55.35,
+      "end": 58.85
+    },
+    {
+      "speaker": "निशा",
+      "text": "पीछे देखो, वो आ रहे हैं!",
+      "emotion": "nervous",
+      "start": 70.25,
+      "end": 73.25
+    }
+  ],
+  "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0. Original Hindi dialogue, story and voice by this channel."
+}

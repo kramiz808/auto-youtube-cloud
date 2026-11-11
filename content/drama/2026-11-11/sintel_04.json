@@ -1,0 +1,30 @@
+{
+  "title": "ज़िद की राह: जो तय्यार करे, रास्ता ख़ुद बन जाता है",
+  "hook": "निशा अपनी माँ की जान बचाने के लिए मौत के साये से गुज़र रही है। क्या वो इस रहस्यमयी रक्षक की अग्नि परीक्षा पार कर पाएगी?",
+  "description": "पहाड़ की गुफा में फंसी निशा के सामने एक प्राचीन रक्षक खड़ा है। देखिए कैसे हिम्मत ही बनती है नया रास्ता।",
+  "hashtags": "#shorts #hindi #storytelling #zidkirah #emotionalstory",
+  "lines": [
+    {
+      "speaker": "निशा",
+      "text": "कोई है यहाँ?",
+      "emotion": "nervous",
+      "start": 9.6,
+      "end": 11.5
+    },
+    {
+      "speaker": "वृद्ध",
+      "text": "डरना मत, डटे रहो।",
+      "emotion": "calm",
+      "start": 13.6,
+      "end": 16.0
+    },
+    {
+      "speaker": "निशा",
+      "text": "मुझे माँ के पास पहुँचना ही होगा।",
+      "emotion": "determined",
+      "start": 18.2,
+      "end": 21.8
+    }
+  ],
+  "attribution": "Footage: \"Sintel\" (2010) by Blender Foundation (durian.blender.org), licensed CC-BY 3.0. Original Hindi dialogue, story and voice by this channel."
+}

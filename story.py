@@ -679,6 +679,7 @@ def already_on_channel(day, series):
 
 def main():
     from pipeline import mark_blocked, upload, upload_blocked, UploadLimitReached
+    import drama
     today = datetime.date.today().isoformat()
     log = OUT / "stories.txt"
     if log.exists() and any(l.startswith(today) and "| ep" in l
@@ -686,49 +687,21 @@ def main():
         print("SKIP: aaj ka episode pehle hi upload ho chuka hai")
         sys.exit(0)
     print("Checking channel for today's episode", flush=True)
-    if already_on_channel(today, SERIES["series"]):
+    if already_on_channel(today, drama.SAGA["series"]):
         print("SKIP: aaj ka episode channel par pehle se hai")
         sys.exit(0)
     if upload_blocked():
         print("SKIP: YouTube upload quota reset ka intezaar")
         sys.exit(0)
 
-    voice.preflight(CAST)
     state_path = ROOT / "story_state.json"
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     ep = state.get("episode", 1)
-    cache = OUT / f"episode-{today}.json"
-    if cache.exists():
-        plan = json.loads(cache.read_text(encoding="utf-8"))
-        print("cached script:", plan["title"])
-    else:
-        plan = write_episode(ep, state.get("revealed", []))
-        cache.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    slug = f"drama-ep{ep:02d}-{today}"
-    video, total = build(plan, slug)
+    video, total, scripts = drama.episode(today)
     minutes = round(total / 60)
     print("VIDEO:", video, round(video.stat().st_size / 1e6, 1), "MB", f"{minutes} min")
-
-    recap = "\n".join(f"- {r}" for r in state.get("revealed", [])[-4:])
-    desc = f"{plan['logline']}\n\n"
-    if recap:
-        desc += f"Pichhle episodes mein:\n{recap}\n\n"
-    desc += (f"Is episode ka sawaal: {plan['next_question']}\n\n"
-             "Poori series ek hi playlist mein — episode 1 se shuru karo.\n"
-             "Har roz naya episode. Subscribe kar lo taaki agla hissa chhoote nahi.\n\n"
-             f"#hindikahani #audiodrama #suspense #{SERIES['series'].replace(' ', '')}")
-    data = {
-        "title": f"{plan['title']} | {SERIES['series']} एपिसोड {ep}"[:100],
-        "description": desc,
-        "hashtags": f"#hindikahani #audiodrama #suspensestory #{SERIES['series'].replace(' ', '')}",
-        "tags": ["hindi kahani", "audio drama", "hindi suspense story", "family drama",
-                 "kahaniyan", "hindi audio story", SERIES["series"], "emotional story"],
-        "attribution": "Kirdar aur background: AI-generated original art. "
-                       "Dialogue performed with neural AI voices. Story written with AI. "
-                       "Sabhi kirdar aur ghatnayein kalpanik hain.",
-        "privacy": "public",
-    }
+    data = drama.episode_data(today, scripts)
     try:
         vid = upload(video, data)
     except UploadLimitReached as exc:
@@ -739,16 +712,9 @@ def main():
         print("Auth missing — record nahi bana, agla tick retry karega", file=sys.stderr)
         sys.exit(1)
     with log.open("a", encoding="utf-8") as f:
-        f.write(f"{today} | ep{ep} | {plan['title']} | {minutes}min | youtu.be/{vid}\n")
-    try:
-        import ig
-        if ig.token():
-            ig.publish(ig.teaser(video, 60),
-                       f"{plan['title']} | episode {ep} — poori kahani YouTube par\n\n{data['hashtags']}")
-    except Exception as exc:
-        print("IG SKIP:", str(exc)[:200])
+        f.write(f"{today} | ep{ep} | {data['title']} | {minutes}min | youtu.be/{vid}\n")
     state["episode"] = ep + 1
-    state.setdefault("revealed", []).append(plan.get("reveal", ""))
+    state.setdefault("revealed", []).append(scripts[-1]["hook"])
     state["revealed"] = state["revealed"][-14:]
     state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 

@@ -205,7 +205,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_daily_does_not_upload_old_reel_after_tts_failure(self):
         state = {"scene_index": 2}
-        with patch("daily.teaser.build", side_effect=voice.VoiceUnavailable("quota")), \
+        with patch("daily.drama.chapter_video", side_effect=voice.VoiceUnavailable("quota")), \
                 patch("daily.pipeline.upload") as upload:
             with self.assertRaises(voice.VoiceUnavailable):
                 daily.post_slot("afternoon", "2026-11-10", state, 2)
