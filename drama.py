@@ -1,6 +1,8 @@
 """Dragon-style drama: CC-BY animated footage, original Hindi story, lip-synced dub, film-strip edit."""
 import json
+import hashlib
 import shutil
+import subprocess
 from pathlib import Path
 
 from pipeline import FFMPEG, OUT, ROOT, WORK, media_duration, run
@@ -313,7 +315,10 @@ def chapter_video(clip_key, day):
     if path.exists():
         return path, load_script(clip_key, day)
     script = load_script(clip_key, day)
-    path, _ = build(clip_key, day=day, out=path)
+    try:
+        path, _ = build_ref(clip_key, day=day, out=path)
+    except voice.VoiceUnavailable:
+        path, _ = build(clip_key, day=day, out=path)
     remember(script)
     return path, script
 
@@ -357,6 +362,168 @@ def episode_data(day, scripts):
         "attribution": scripts[0]["attribution"],
         "privacy": "public",
     }
+
+
+GEMINI_TTS = "gemini-3.1-flash-tts-preview"
+GEMINI_VOICES = {"निशा": "Kore", "वृद्ध": "Charon"}
+
+
+def gemini_dialogue(script, out):
+    """One natural multi-speaker Gemini TTS call for the whole chapter (quota-friendly)."""
+    import base64
+    import urllib.request
+    import urllib.error
+    from story import gemini_key
+    turns = script["lines"]
+    speakers = list(dict.fromkeys(l["speaker"] for l in turns))
+    dialog = "\n".join(f"{l['speaker']}: {l['text']}" for l in turns)
+    prompt = (
+        "TTS the following Hindi conversation between characters. Act it like a real emotional "
+        "audio drama: natural human delivery, breath, feeling, varied pace. Leave a clear short "
+        "pause between each turn.\n"
+        + "\n".join(f"{name}: {SAGA['cast'].get(name, '')}" for name in speakers)
+        + "\n" + dialog
+    )
+    fingerprint = hashlib.sha256((GEMINI_TTS + prompt).encode("utf-8")).hexdigest()
+    cache = WORK / "gemini_tts"
+    cache.mkdir(parents=True, exist_ok=True)
+    cached = cache / f"{fingerprint}.wav"
+    if cached.exists():
+        shutil.copy(cached, out)
+        return out
+    body = {"contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                "speechConfig": {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
+                    {"speaker": s, "voiceConfig": {"prebuiltVoiceConfig": {
+                        "voiceName": GEMINI_VOICES.get(s, "Kore")}}} for s in speakers]}}}}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TTS}:generateContent"
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json",
+                                          "x-goog-api-key": gemini_key()})
+    try:
+        resp = json.loads(urllib.request.urlopen(req, timeout=300).read())
+        parts = resp["candidates"][0]["content"]["parts"]
+        blob = next((p.get("inlineData") or p.get("inline_data") for p in parts
+                     if p.get("inlineData") or p.get("inline_data")), None)
+        if not blob:
+            raise RuntimeError("no audio")
+        pcm = base64.b64decode(blob["data"])
+    except Exception as exc:
+        raise voice.VoiceUnavailable(f"Gemini TTS failed: {type(exc).__name__}") from None
+    subprocess.run([FFMPEG, "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "-",
+                    "-c:a", "pcm_s16le", str(out)], input=pcm, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=WORK)
+    shutil.copy(out, cached)
+    return out
+
+
+def _speech_segments(wav, n, total):
+    """Approximate per-line timings from silence gaps; fall back to equal split."""
+    proc = subprocess.run([FFMPEG, "-hide_banner", "-i", str(wav), "-af",
+                           "silencedetect=noise=-30dB:d=0.35", "-f", "null", "-"],
+                          capture_output=True, text=True, cwd=WORK)
+    text = proc.stderr or ""
+    sil = []
+    start = None
+    for line in text.splitlines():
+        if "silence_start:" in line:
+            start = float(line.split("silence_start:")[1].strip())
+        elif "silence_end:" in line and start is not None:
+            sil.append((start, float(line.split("silence_end:")[1].split("|")[0].strip())))
+            start = None
+    segs, cur = [], 0.0
+    for s, e in sil:
+        if s - cur > 0.4:
+            segs.append((cur, s))
+        cur = e
+    if total - cur > 0.4:
+        segs.append((cur, total))
+    if len(segs) == n:
+        return segs
+    step = total / n
+    return [(i * step, (i + 1) * step) for i in range(n)]
+
+
+def build_ref(clip_key, slug=None, day=None, out=None, voice_wav=None, script=None):
+    """Reference-style aesthetic short: cinematic stills + Ken Burns, blurred ambient bg,
+    top hook, bottom subtitles + live audio waveform, natural multi-speaker voice."""
+    WORK.mkdir(exist_ok=True)
+    OUT.mkdir(exist_ok=True)
+    clip = CLIPS[clip_key]
+    src = ROOT / clip["file"]
+    script = script or load_script(clip_key, day)
+    lines = script["lines"]
+    n = len(lines)
+    if voice_wav is None:
+        voice_wav = gemini_dialogue(script, WORK / "ref_voice.wav")
+    total = media_duration(voice_wav)
+    segs = _speech_segments(voice_wav, n, total)
+    shutil.copy(FONT_FILE, WORK / "cfont.ttf")
+
+    stills = []
+    for i, line in enumerate(lines):
+        st = WORK / f"refstill_{clip_key}_{i}.jpg"
+        if not st.exists():
+            run([FFMPEG, "-y", "-ss", f"{float(line.get('start', i * 3)):.2f}", "-i", src,
+                 "-frames:v", "1", "-vf",
+                 f"scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
+                 f"crop={STRIP_W}:{STRIP_H}", "-q:v", "2", st], cwd=WORK)
+        stills.append(st)
+
+    inputs = [arg for st in stills for arg in ("-i", str(st))]
+    inputs += ["-i", str(voice_wav), "-stream_loop", "-1", "-i", str(MUSIC)]
+    na, nm = n, n + 1
+
+    parts = []
+    for i, (s, e) in enumerate(segs):
+        frames = max(1, int(round((e - s) * 30)))
+        parts.append(
+            f"[{i}:v]zoompan=z='1.06+0.10*on/{frames}':x='iw/2-(iw/zoom/2)':"
+            f"y='ih/2-(ih/zoom/2)':d={frames}:s={STRIP_W}x{STRIP_H}:fps=30,setsar=1,"
+            f"eq=contrast=1.06:saturation=1.10:brightness=0.015:gamma=1.08[s{i}]")
+    parts.append("".join(f"[s{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[strip]")
+    parts.append("[strip]split=2[st][bgs]")
+    parts.append(f"[bgs]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+                 f"boxblur=6:1,scale={W}:{H},eq=brightness=-0.10:saturation=1.20:contrast=1.05[bg]")
+    parts.append(f"[bg][st]overlay=0:{STRIP_Y}[v1]")
+
+    filters = []
+    hook = script["hook"]
+    if len(hook) > 72:
+        hook = hook[:72].rsplit(" ", 1)[0] + "…"
+    for j, seg in enumerate(wrap(hook, 24)[:3]):
+        (WORK / f"rhook_{j}.txt").write_text(seg, encoding="utf-8")
+        filters.append(_drawtext(f"rhook_{j}", HOOK_SIZE, HOOK_Y + j * HOOK_LH,
+                                 alpha="min(1,t/0.5)"))
+    for k, (line, (s, e)) in enumerate(zip(lines, segs)):
+        for j, seg in enumerate(wrap(line["text"], 32)[:2]):
+            (WORK / f"rsub_{k}_{j}.txt").write_text(seg, encoding="utf-8")
+            filters.append(_drawtext(f"rsub_{k}_{j}", SUB_SIZE, SUB_Y + j * SUB_LH,
+                                     alpha=f"min(1,(t-{s:.2f})/0.15)",
+                                     enable=f"between(t,{s:.2f},{e:.2f})"))
+    filters.append(
+        f"drawtext=fontfile=cfont.ttf:text='|  Z I D D I  |':fontcolor=0x9A9A9A:fontsize=24:"
+        f"x=(w-text_w)/2:y={MARK_Y}")
+    parts.append(f"[v1]{','.join(filters)}[v2]")
+    parts.append(f"[{na}:a]asplit=2[voc][wvs]")
+    parts.append("[wvs]showwaves=s=440x90:colors=0xFFFFFF:rate=30:scale=sqrt[wv]")
+    parts.append("[v2][wv]overlay=(main_w-overlay_w)/2:1440[v3]")
+    parts.append("[v3]vignette=PI/5[v]")
+    parts.append("[voc]highpass=f=80,acompressor=threshold=0.15:ratio=2.5:attack=10:release=200:"
+                 "makeup=1.2,aecho=0.8:0.18:30:0.12,volume=1.15,asplit=2[voc1][sc]")
+    parts.append(f"[{nm}:a]volume=0.15,aresample=48000,aformat=channel_layouts=stereo[mus]")
+    parts.append("[mus][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[duck]")
+    parts.append("[duck][voc1]amix=inputs=2:duration=first:normalize=0,"
+                 "alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+
+    out = Path(out) if out else OUT / f"{slug or clip_key}-ref.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    run([FFMPEG, "-y", *inputs, "-filter_complex", ";".join(parts),
+         "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+         "-movflags", "+faststart", out], cwd=WORK)
+    return out, script
 
 
 if __name__ == "__main__":
