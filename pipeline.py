@@ -85,6 +85,9 @@ def get_creds(scopes=None):
 
 
 def upload(video_path, data):
+    import time
+    import httplib2
+    import google_auth_httplib2
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 
@@ -92,7 +95,10 @@ def upload(video_path, data):
     if creds is None:
         print("UPLOAD SKIPPED: YOUTUBE_TOKEN secret / token.json missing")
         return None
-    youtube = build("youtube", "v3", credentials=creds)
+    transport = httplib2.Http(timeout=180)
+    transport.redirect_codes = transport.redirect_codes - {308}
+    http = google_auth_httplib2.AuthorizedHttp(creds, http=transport)
+    youtube = build("youtube", "v3", http=http)
     body = {
         "snippet": {
             "title": data["title"][:100],
@@ -107,9 +113,10 @@ def upload(video_path, data):
             "selfDeclaredMadeForKids": False,
         },
     }
-    media = MediaFileUpload(str(video_path), chunksize=4 * 1024 * 1024, resumable=True)
+    media = MediaFileUpload(str(video_path), chunksize=2 * 1024 * 1024, resumable=True)
     req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     resp = None
+    stalls = 0
     while resp is None:
         try:
             status, resp = req.next_chunk(num_retries=3)
@@ -117,6 +124,11 @@ def upload(video_path, data):
             text = str(exc)
             if "uploadLimitExceeded" in text or "exceeded the number of videos" in text:
                 raise UploadLimitReached(text[:160])
+            if isinstance(exc, (TimeoutError, OSError)) and stalls < 8:
+                stalls += 1
+                print(f"upload stall {stalls}, resuming…")
+                time.sleep(3)
+                continue
             raise
         if status:
             print(f"upload {int(status.progress() * 100)}%")
