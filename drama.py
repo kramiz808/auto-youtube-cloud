@@ -202,7 +202,35 @@ def line_audio(index, line):
     return voice.edge_speech(line["text"], cast["voice"], emotion, rate=rate, pitch=pitch)
 
 
+def _gemini_dub(clip, script, out):
+    """Natural Gemini multi-speaker blob, split on the 1s turn pauses and locked to mouth windows."""
+    blob = gemini_dialogue(script, WORK / "drama_gemini.wav")
+    n = len(script["lines"])
+    total = media_duration(blob)
+    segs = _speech_segments(blob, n, total)
+    if len(segs) != n:
+        raise voice.VoiceUnavailable("gemini line split mismatch")
+    parts, labels = [], []
+    for i, (line, (s, e)) in enumerate(zip(script["lines"], segs)):
+        slot = float(line["end"]) - float(line["start"])
+        speed = max(0.85, min((e - s) / max(slot, 0.4), 1.3))
+        ms = int(round(float(line["start"]) * 1000))
+        parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS,atempo={speed:.3f},"
+                     f"aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                     f"adelay={ms}|{ms}[d{i}]")
+        labels.append(f"[d{i}]")
+    graph = (";".join(parts) + ";" + "".join(labels)
+             + f"amix=inputs={n}:duration=longest:normalize=0[voc]")
+    run([FFMPEG, "-y", "-i", blob, "-filter_complex", graph, "-map", "[voc]",
+         "-c:a", "pcm_s16le", "-ar", "48000", out], cwd=WORK)
+    return out
+
+
 def build_dub(clip, script, out):
+    try:
+        return _gemini_dub(clip, script, out), True
+    except voice.VoiceUnavailable:
+        pass
     parts, labels = [], []
     for index, line in enumerate(script["lines"]):
         mp3 = line_audio(index, line)
@@ -219,7 +247,7 @@ def build_dub(clip, script, out):
     ins = [arg for index in range(len(script["lines"])) for arg in ("-i", line_audio(index, script["lines"][index]))]
     run([FFMPEG, "-y", *ins, "-filter_complex", graph, "-map", "[voc]",
          "-c:a", "pcm_s16le", "-ar", "48000", out], cwd=WORK)
-    return out
+    return out, False
 
 
 def build(clip_key, slug=None, day=None, out=None):
@@ -230,7 +258,7 @@ def build(clip_key, slug=None, day=None, out=None):
     dur = media_duration(src)
     script = load_script(clip_key, day)
     shutil.copy(FONT_FILE, WORK / "cfont.ttf")
-    dub = build_dub(clip, script, WORK / "drama_dub.wav")
+    dub, natural = build_dub(clip, script, WORK / "drama_dub.wav")
 
     filters = []
     hook = script["hook"]
@@ -277,13 +305,17 @@ def build(clip_key, slug=None, day=None, out=None):
         + punch("vsrc", "vv", "वृद्ध") + ";"
         + f"[v0][vn]overlay=0:0:enable='{enable_for('निशा')}'[p1];"
         + f"[p1][vv]overlay=0:0:enable='{enable_for('वृद्ध')}'[vstrip];"
-        + f"[bg][vstrip]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)},vignette=PI/5[v];"
-        "[2:a]aresample=48000,aformat=channel_layouts=stereo,"
-        "highpass=f=90,lowpass=f=11000,equalizer=f=200:t=q:w=1:g=1.5,"
-        "equalizer=f=3000:t=q:w=1.2:g=2,deesser=i=0.25,"
-        "vibrato=f=5.5:d=0.02,vibrato=f=0.7:d=0.015,"
-        "acompressor=threshold=0.12:ratio=3:attack=8:release=180:makeup=1.3,"
-        "aecho=0.8:0.22:35:0.15,volume=1.2,asplit=3[voc][scA][scB];"
+        + f"[bg][vstrip]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)}[v2];"
+        + "[v2][wv]overlay=(main_w-overlay_w)/2:1440[v3];[v3]vignette=PI/5[v];"
+        + "[2:a]aresample=48000,aformat=channel_layouts=stereo,"
+        + ("highpass=f=80,acompressor=threshold=0.15:ratio=2.5:attack=10:release=200:makeup=1.2,"
+           "aecho=0.8:0.18:30:0.12,volume=1.15," if natural else
+           "highpass=f=90,lowpass=f=11000,equalizer=f=200:t=q:w=1:g=1.5,"
+           "equalizer=f=3000:t=q:w=1.2:g=2,deesser=i=0.25,vibrato=f=5.5:d=0.02,vibrato=f=0.7:d=0.015,"
+           "acompressor=threshold=0.12:ratio=3:attack=8:release=180:makeup=1.3,"
+           "aecho=0.8:0.22:35:0.15,volume=1.2,")
+        + "asplit=4[voc][scA][scB][wvs];"
+        + "[wvs]showwaves=s=440x90:colors=0xFFFFFF:rate=30:scale=sqrt[wv];"
         "[1:a]lowpass=f=900,volume=0.5,aresample=48000,aformat=channel_layouts=stereo[amb];"
         "[amb][scA]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=350[ambduck];"
         "[3:a]volume=0.20,aresample=48000,aformat=channel_layouts=stereo[mus];"
@@ -315,10 +347,7 @@ def chapter_video(clip_key, day):
     if path.exists():
         return path, load_script(clip_key, day)
     script = load_script(clip_key, day)
-    try:
-        path, _ = build_ref(clip_key, day=day, out=path)
-    except voice.VoiceUnavailable:
-        path, _ = build(clip_key, day=day, out=path)
+    path, _ = build(clip_key, day=day, out=path)
     remember(script)
     return path, script
 
@@ -365,6 +394,7 @@ def episode_data(day, scripts):
 
 
 GEMINI_TTS = "gemini-3.1-flash-tts-preview"
+GEMINI_TTS_FALLBACKS = ["gemini-2.5-flash-preview-tts", "gemini-3.8-flash-tts"]
 GEMINI_VOICES = {"निशा": "Kore", "वृद्ध": "Charon"}
 
 
@@ -379,37 +409,42 @@ def gemini_dialogue(script, out):
     dialog = "\n".join(f"{l['speaker']}: {l['text']}" for l in turns)
     prompt = (
         "TTS the following Hindi conversation between characters. Act it like a real emotional "
-        "audio drama: natural human delivery, breath, feeling, varied pace. Leave a clear short "
-        "pause between each turn.\n"
+        "audio drama: natural human delivery, breath, feeling, varied pace. Leave a full "
+        "one-second silence between each turn.\n"
         + "\n".join(f"{name}: {SAGA['cast'].get(name, '')}" for name in speakers)
         + "\n" + dialog
     )
-    fingerprint = hashlib.sha256((GEMINI_TTS + prompt).encode("utf-8")).hexdigest()
     cache = WORK / "gemini_tts"
     cache.mkdir(parents=True, exist_ok=True)
-    cached = cache / f"{fingerprint}.wav"
-    if cached.exists():
-        shutil.copy(cached, out)
-        return out
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseModalities": ["AUDIO"],
                 "speechConfig": {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
                     {"speaker": s, "voiceConfig": {"prebuiltVoiceConfig": {
                         "voiceName": GEMINI_VOICES.get(s, "Kore")}}} for s in speakers]}}}}
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TTS}:generateContent"
-    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                 headers={"Content-Type": "application/json",
-                                          "x-goog-api-key": gemini_key()})
-    try:
-        resp = json.loads(urllib.request.urlopen(req, timeout=300).read())
-        parts = resp["candidates"][0]["content"]["parts"]
-        blob = next((p.get("inlineData") or p.get("inline_data") for p in parts
-                     if p.get("inlineData") or p.get("inline_data")), None)
-        if not blob:
-            raise RuntimeError("no audio")
-        pcm = base64.b64decode(blob["data"])
-    except Exception as exc:
-        raise voice.VoiceUnavailable(f"Gemini TTS failed: {type(exc).__name__}") from None
+    pcm = None
+    for model in [GEMINI_TTS] + GEMINI_TTS_FALLBACKS:
+        cached = cache / f"{hashlib.sha256((model + prompt).encode('utf-8')).hexdigest()}.wav"
+        if cached.exists():
+            shutil.copy(cached, out)
+            return out
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                     headers={"Content-Type": "application/json",
+                                              "x-goog-api-key": gemini_key()})
+        try:
+            resp = json.loads(urllib.request.urlopen(req, timeout=300).read())
+            parts = resp["candidates"][0]["content"]["parts"]
+            blob = next((p.get("inlineData") or p.get("inline_data") for p in parts
+                         if p.get("inlineData") or p.get("inline_data")), None)
+            if not blob:
+                raise RuntimeError("no audio")
+            pcm = base64.b64decode(blob["data"])
+            used_cache = cached
+            break
+        except Exception:
+            continue
+    if pcm is None:
+        raise voice.VoiceUnavailable("Gemini TTS failed on all models")
     subprocess.run([FFMPEG, "-y", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "-",
                     "-c:a", "pcm_s16le", str(out)], input=pcm, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=WORK)
@@ -418,9 +453,10 @@ def gemini_dialogue(script, out):
 
 
 def _speech_segments(wav, n, total):
-    """Approximate per-line timings from silence gaps; fall back to equal split."""
+    """Per-line timings: the n-1 longest silence gaps are the turn boundaries."""
+    wav = Path(wav).resolve()
     proc = subprocess.run([FFMPEG, "-hide_banner", "-i", str(wav), "-af",
-                           "silencedetect=noise=-30dB:d=0.35", "-f", "null", "-"],
+                           "silencedetect=noise=-30dB:d=0.3", "-f", "null", "-"],
                           capture_output=True, text=True, cwd=WORK)
     text = proc.stderr or ""
     sil = []
@@ -431,17 +467,22 @@ def _speech_segments(wav, n, total):
         elif "silence_end:" in line and start is not None:
             sil.append((start, float(line.split("silence_end:")[1].split("|")[0].strip())))
             start = None
+    if n <= 1:
+        return [(0.0, total)]
+    inner = [g for g in sil if g[0] > 0.3 and g[1] < total - 0.3]
+    chosen = sorted(sorted(inner, key=lambda g: g[1] - g[0], reverse=True)[:n - 1])
     segs, cur = [], 0.0
-    for s, e in sil:
-        if s - cur > 0.4:
+    if sil and sil[0][0] <= 0.3:
+        cur = sil[0][1]
+    for s, e in chosen:
+        if s > cur:
             segs.append((cur, s))
         cur = e
-    if total - cur > 0.4:
-        segs.append((cur, total))
-    if len(segs) == n:
-        return segs
-    step = total / n
-    return [(i * step, (i + 1) * step) for i in range(n)]
+    segs.append((cur, total))
+    if len(segs) != n:
+        step = total / n
+        return [(i * step, (i + 1) * step) for i in range(n)]
+    return segs
 
 
 def build_ref(clip_key, slug=None, day=None, out=None, voice_wav=None, script=None):
