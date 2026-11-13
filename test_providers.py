@@ -203,11 +203,11 @@ class ProviderTests(unittest.TestCase):
             voice.dialogue_audio(turns, cast, self.root / "same.wav")
         self.network.assert_not_called()
 
-    def test_daily_does_not_upload_old_reel_after_tts_failure(self):
+    def test_daily_does_not_upload_old_reel_after_build_failure(self):
         state = {"scene_index": 2}
-        with patch("daily.drama.chapter_video", side_effect=voice.VoiceUnavailable("quota")), \
+        with patch("daily.fantasy.build", side_effect=RuntimeError("image fetch failed")), \
                 patch("daily.pipeline.upload") as upload:
-            with self.assertRaises(voice.VoiceUnavailable):
+            with self.assertRaises(RuntimeError):
                 daily.post_slot("afternoon", "2026-11-10", state, 2)
             upload.assert_not_called()
         self.assertEqual(state, {"scene_index": 2})
