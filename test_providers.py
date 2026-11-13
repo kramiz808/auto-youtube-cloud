@@ -205,9 +205,9 @@ class ProviderTests(unittest.TestCase):
 
     def test_daily_does_not_upload_old_reel_after_build_failure(self):
         state = {"scene_index": 2}
-        with patch("daily.fantasy.build", side_effect=RuntimeError("image fetch failed")), \
+        with patch("daily.drama.chapter_video", side_effect=voice.VoiceUnavailable("quota")), \
                 patch("daily.pipeline.upload") as upload:
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(voice.VoiceUnavailable):
                 daily.post_slot("afternoon", "2026-11-10", state, 2)
             upload.assert_not_called()
         self.assertEqual(state, {"scene_index": 2})

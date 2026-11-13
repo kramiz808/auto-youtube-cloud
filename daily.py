@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pipeline
-import fantasy
+import drama
 from story import text_completion
 
 ROOT = Path(__file__).resolve().parent
@@ -51,11 +51,14 @@ def student_app():
 
 
 def post_slot(slot, today, state, run_no):
-    """Ek slot ka AI cinematic fantasy video bana ke upload karo. Video id return, warna None."""
-    video, theme = fantasy.build(today, slot)
-    data = fantasy.video_data(theme)
+    """Ek slot ka clean-voice drama short bana ke upload karo. Video id return, warna None."""
+    keys = list(drama.CLIPS)
+    offset = 1 if slot == "evening" else 0
+    key = keys[(run_no + offset) % len(keys)]
+    video, script = drama.chapter_video(key, today)
+    data = drama.short_data(script)
     slug = f"{today}-{run_no % 100:02d}"
-    label = "fantasy"
+    label = "drama-short"
     (ROOT / "today.json").write_text(
         json.dumps({**data, "slug": slug}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"VIDEO: {video}")

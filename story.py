@@ -678,8 +678,6 @@ def already_on_channel(day, series):
 
 
 def main():
-    print("SKIP: daily posting ab fantasy format mein daily.py se hoti hai")
-    sys.exit(0)
     from pipeline import mark_blocked, upload, upload_blocked, UploadLimitReached
     import drama
     today = datetime.date.today().isoformat()

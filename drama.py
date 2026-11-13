@@ -203,51 +203,53 @@ def line_audio(index, line):
 
 
 def _gemini_dub(clip, script, out):
-    """Natural Gemini multi-speaker blob, split on the 1s turn pauses and locked to mouth windows."""
+    """Natural Gemini multi-speaker blob split on turn pauses; voice keeps its natural pace."""
     blob = gemini_dialogue(script, WORK / "drama_gemini.wav")
     n = len(script["lines"])
     total = media_duration(blob)
     segs = _speech_segments(blob, n, total)
     if len(segs) != n:
         raise voice.VoiceUnavailable("gemini line split mismatch")
-    parts, labels = [], []
-    for i, (line, (s, e)) in enumerate(zip(script["lines"], segs)):
-        slot = float(line["end"]) - float(line["start"])
-        speed = max(0.85, min((e - s) / max(slot, 0.4), 1.3))
-        ms = int(round(float(line["start"]) * 1000))
-        parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS,atempo={speed:.3f},"
+    parts, labels, durs = [], [], []
+    cum = 0.0
+    for i, (s, e) in enumerate(segs):
+        ms = int(round(cum * 1000))
+        parts.append(f"[0:a]atrim={s:.3f}:{e:.3f},asetpts=PTS-STARTPTS,"
                      f"aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
                      f"adelay={ms}|{ms}[d{i}]")
         labels.append(f"[d{i}]")
+        durs.append(e - s)
+        cum += e - s
     graph = (";".join(parts) + ";" + "".join(labels)
              + f"amix=inputs={n}:duration=longest:normalize=0[voc]")
     run([FFMPEG, "-y", "-i", blob, "-filter_complex", graph, "-map", "[voc]",
          "-c:a", "pcm_s16le", "-ar", "48000", out], cwd=WORK)
-    return out
+    return out, durs
 
 
 def build_dub(clip, script, out):
     try:
-        return _gemini_dub(clip, script, out), True
+        dub, durs = _gemini_dub(clip, script, out)
+        return dub, True, durs
     except voice.VoiceUnavailable:
         pass
-    parts, labels = [], []
+    parts, labels, durs = [], [], []
+    cum = 0.0
     for index, line in enumerate(script["lines"]):
         mp3 = line_audio(index, line)
         dur = media_duration(mp3)
-        slot = float(line["end"]) - float(line["start"])
-        # Exact-fit: voice spans the whole mouth-window so lips and audio stay locked.
-        speed = max(0.9, min(dur / max(slot, 0.4), 1.3))
-        ms = int(round(float(line["start"]) * 1000))
-        parts.append(f"[{index}:a]atempo={speed:.3f},aresample=48000,"
+        ms = int(round(cum * 1000))
+        parts.append(f"[{index}:a]aresample=48000,"
                      f"aformat=sample_fmts=fltp:channel_layouts=stereo,adelay={ms}|{ms}[d{index}]")
         labels.append(f"[d{index}]")
+        durs.append(dur)
+        cum += dur
     graph = (";".join(parts) + ";" + "".join(labels)
              + f"amix=inputs={len(labels)}:duration=longest:normalize=0[voc]")
     ins = [arg for index in range(len(script["lines"])) for arg in ("-i", line_audio(index, script["lines"][index]))]
     run([FFMPEG, "-y", *ins, "-filter_complex", graph, "-map", "[voc]",
          "-c:a", "pcm_s16le", "-ar", "48000", out], cwd=WORK)
-    return out, False
+    return out, False, durs
 
 
 def build(clip_key, slug=None, day=None, out=None):
@@ -255,10 +257,29 @@ def build(clip_key, slug=None, day=None, out=None):
     OUT.mkdir(exist_ok=True)
     clip = CLIPS[clip_key]
     src = ROOT / clip["file"]
-    dur = media_duration(src)
     script = load_script(clip_key, day)
     shutil.copy(FONT_FILE, WORK / "cfont.ttf")
-    dub, natural = build_dub(clip, script, WORK / "drama_dub.wav")
+    dub, natural, durs = build_dub(clip, script, WORK / "drama_dub.wav")
+    # Cut silent gaps and time-fit each speaking window to its voice line, so the
+    # natural voice runs continuously through the whole story with nothing truncated.
+    windows = [(float(l["start"]), float(l["end"])) for l in script["lines"]]
+    trimmed = WORK / f"trim_{clip_key}.mp4"
+    tp = []
+    for i, ((s, e), d) in enumerate(zip(windows, durs)):
+        scale = d / max(e - s, 0.1)
+        tp.append(f"[0:v]trim={s:.2f}:{e:.2f},setpts=(PTS-STARTPTS)*{scale:.4f}[t{i}]")
+    tp.append("".join(f"[t{i}]" for i in range(len(windows)))
+              + f"concat=n={len(windows)}:v=1:a=0[v]")
+    run([FFMPEG, "-y", "-i", src, "-filter_complex", ";".join(tp), "-map", "[v]",
+         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", trimmed], cwd=WORK)
+    src = trimmed
+    cum = 0.0
+    new_lines = []
+    for l, d in zip(script["lines"], durs):
+        new_lines.append(dict(l, start=cum, end=cum + d))
+        cum += d
+    script = dict(script, lines=new_lines)
+    dur = media_duration(src)
 
     filters = []
     hook = script["hook"]
@@ -296,7 +317,7 @@ def build(clip_key, slug=None, day=None, out=None):
         return "+".join(terms) or "0"
 
     graph = (
-        f"[1:v]split=4[bgsrc][wsrc][nsrc][vsrc];"
+        f"[0:v]split=4[bgsrc][wsrc][nsrc][vsrc];"
         f"[bgsrc]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
         f"boxblur=6:1,scale={W}:{H},eq=brightness=-0.10:saturation=1.20:contrast=1.05[bg];"
         f"[wsrc]scale={STRIP_W}:{STRIP_H}:force_original_aspect_ratio=increase,"
@@ -307,30 +328,22 @@ def build(clip_key, slug=None, day=None, out=None):
         + f"[p1][vv]overlay=0:0:enable='{enable_for('वृद्ध')}'[vstrip];"
         + f"[bg][vstrip]overlay=0:{STRIP_Y}[v1];[v1]{','.join(filters)}[v2];"
         + "[v2][wv]overlay=(main_w-overlay_w)/2:1440[v3];[v3]vignette=PI/5[v];"
-        + "[2:a]aresample=48000,aformat=channel_layouts=stereo,"
+        + "[1:a]aresample=48000,aformat=channel_layouts=stereo,"
         + ("highpass=f=80,acompressor=threshold=0.15:ratio=2.5:attack=10:release=200:makeup=1.2,"
            "aecho=0.8:0.18:30:0.12,volume=1.15," if natural else
            "highpass=f=90,lowpass=f=11000,equalizer=f=200:t=q:w=1:g=1.5,"
            "equalizer=f=3000:t=q:w=1.2:g=2,deesser=i=0.25,vibrato=f=5.5:d=0.02,vibrato=f=0.7:d=0.015,"
            "acompressor=threshold=0.12:ratio=3:attack=8:release=180:makeup=1.3,"
            "aecho=0.8:0.22:35:0.15,volume=1.2,")
-        + "asplit=4[voc][scA][scB][wvs];"
+        + "asplit=2[voc][wvs];"
         + "[wvs]showwaves=s=440x90:colors=0xFFFFFF:rate=30:scale=sqrt[wv];"
-        "[1:a]lowpass=f=900,volume=0.5,aresample=48000,aformat=channel_layouts=stereo[amb];"
-        "[amb][scA]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=350[ambduck];"
-        "[3:a]volume=0.20,aresample=48000,aformat=channel_layouts=stereo[mus];"
-        "[mus][scB]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[musduck];"
-        "[ambduck][musduck]amix=inputs=2:duration=first:normalize=0[bed];"
-        "[bed][voc]amix=inputs=2:duration=first:normalize=0,"
-        "alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+        + "[voc]alimiter=limit=0.95,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
 
     out = Path(out) if out else OUT / f"{slug or clip_key}.mp4"
     out.parent.mkdir(parents=True, exist_ok=True)
     run([FFMPEG, "-y",
-         "-f", "lavfi", "-i", f"color=c=black:s={W}x{H}:r=30:d={dur:.3f}",
          "-i", src,
          "-i", dub,
-         "-stream_loop", "-1", "-i", MUSIC,
          "-filter_complex", graph,
          "-map", "[v]", "-map", "[a]",
          "-t", f"{dur:.3f}",
