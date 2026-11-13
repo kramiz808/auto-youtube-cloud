@@ -11,11 +11,13 @@ from pipeline import FFMPEG, OUT, ROOT, WORK, media_duration, run
 
 W, H = 1080, 1920
 FPS = 30
+BAND_W, BAND_H, BAND_Y = 1080, 600, 600
 PROMPT_PICK = (0, 1, 4, 5)
 SCENES = len(PROMPT_PICK)
 SCENE_S = 8.0
 XFADE = 0.6
 FONT_FILE = ROOT / "assets" / "fonts" / "Mukta-Bold.ttf"
+TITLE_FONT = ROOT / "assets" / "fonts" / "GreatVibes-Regular.ttf"
 
 SFW = ("modest elegant fantasy attire, fully covered torso, family-safe, no nudity, "
        "photorealistic cinematic, ultra detailed, professional movie lighting, ")
@@ -23,18 +25,19 @@ SFW = ("modest elegant fantasy attire, fully covered torso, family-safe, no nudi
 THEMES = [
     {
         "key": "mermaid",
-        "title": "Samundar Ki Rani",
-        "credit": "ZIDDI • Dreamy Ocean Mix",
+        "title": "Samundar Ka Ishq",
+        "credit": "ZIDDI • Dreamy Phonk",
         "bpm": 100,
+        "pick": (0, 1, 2, 3, 4),
         "grade": "eq=saturation=1.15:contrast=1.06:brightness=0.02,colorbalance=bm=0.08:gm=0.04:bs=0.06",
-        "char": "the same young mermaid with long dark teal hair, emerald shimmering tail, elegant seashell bodice",
+        "char": "an original silver-white-haired mermaid with sapphire-blue shimmering tail and pearl bodice",
+        "man": "an original young fisherman with short black hair, light stubble, torn white linen shirt",
         "prompts": [
-            "beautiful tropical beach, green palm trees, crystal-clear turquoise ocean water, wide establishing shot",
-            "{char} swimming gracefully near the beach underwater, flowing hair",
-            "cinematic close-up of seashells and colorful ocean treasures on the sandy seabed",
-            "{char} exploring a mysterious underwater cave, shimmering fantasy tail, floating particles",
-            "cinematic close-up of {char} face and eyes, gentle underwater expression, sunlight rays",
-            "breathtaking wide underwater shot, sunlight rays through ocean, {char} swimming into the distance, colorful tropical fish",
+            "cinematic close-up of {man} face, longing expression, wet hair, sea breeze, rocky shore, dreamy turquoise grade",
+            "a single crystal water droplet falling, reflecting the smiling face of {man} inside it, macro cinematic, soft light",
+            "{char} seen from behind underwater, flowing silver-white hair and sapphire tail, mysterious deep sea",
+            "{char} leaning tenderly over {man} lying wounded on wet shore rocks, holding him, tragic romance, modest family-safe",
+            "breathtaking wide underwater shot, sunlight rays through ocean, {char} swimming into the deep distance, hidden love",
         ],
     },
     {
@@ -98,10 +101,10 @@ def fetch_images(theme, day, slot=""):
     folder = WORK / "fantasy" / f"{day}-{slot or 'main'}"
     folder.mkdir(parents=True, exist_ok=True)
     paths = []
-    for i, tpl in enumerate([theme["prompts"][k] for k in PROMPT_PICK]):
+    for i, tpl in enumerate([theme["prompts"][k] for k in theme.get("pick", PROMPT_PICK)]):
         path = folder / f"{i}.jpg"
         if not path.exists():
-            prompt = SFW + tpl.format(char=theme["char"])
+            prompt = SFW + tpl.format(char=theme["char"], man=theme.get("man", ""))
             seed = int(hashlib.sha256(f"{day}{slot}{i}".encode()).hexdigest()[:8], 16)
             data = None
             for model in ("flux", "turbo"):
@@ -153,44 +156,46 @@ def build(day, slot="", out=None):
     OUT.mkdir(exist_ok=True)
     theme = pick_theme(day, slot)
     images = fetch_images(theme, day, slot)
-    total = SCENES * SCENE_S - (SCENES - 1) * XFADE
+    n = len(images)
+    total = n * SCENE_S - (n - 1) * XFADE
     music = synth_music(WORK / "fantasy_music.wav", total, theme["bpm"])
     import shutil
     shutil.copy(FONT_FILE, WORK / "cfont.ttf")
+    shutil.copy(TITLE_FONT, WORK / "tfont.ttf")
 
     inputs = [arg for p in images for arg in ("-i", str(p))]
     inputs += ["-i", str(music)]
-    na = len(images)
+    na = n
 
     parts = []
     frames = int(SCENE_S * FPS)
-    for i in range(SCENES):
+    for i in range(n):
         parts.append(
             f"[{i}:v]crop=iw:ih*0.94:0:0,"
-            f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+            f"scale={BAND_W}:{BAND_H}:force_original_aspect_ratio=increase,crop={BAND_W}:{BAND_H},"
             f"zoompan=z='1.02+0.12*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={frames}:s={W}x{H}:fps={FPS},setsar=1,{theme['grade']}[v{i}]")
+            f"d={frames}:s={BAND_W}x{BAND_H}:fps={FPS},setsar=1,{theme['grade']}[v{i}]")
     chain = "[v0]"
-    for i in range(1, SCENES):
+    for i in range(1, n):
         offset = i * SCENE_S - i * XFADE
-        nxt = f"[x{i}]" if i < SCENES - 1 else "[vj]"
+        nxt = f"[x{i}]" if i < n - 1 else "[vj]"
         parts.append(f"{chain}[v{i}]xfade=transition=fade:duration={XFADE}:offset={offset:.2f}{nxt}")
         chain = nxt
-    parts.append("[vj]noise=alls=4:allf=t,vignette=PI/5[vb]")
+    parts.append(f"[vj]noise=alls=4:allf=t,pad={W}:{H}:0:{BAND_Y}:black[vb]")
 
     title = theme["title"]
     (WORK / "ftitle.txt").write_text(title, encoding="utf-8")
     (WORK / "fcredit.txt").write_text(theme["credit"], encoding="utf-8")
     parts.append(
-        "[vb]drawtext=fontfile=cfont.ttf:textfile=ftitle.txt:fontcolor=white:fontsize=56:"
-        "x=(w-text_w)/2:y=120:borderw=2:bordercolor=black@0.6:shadowcolor=black@0.5:shadowy=3:"
+        "[vb]drawtext=fontfile=tfont.ttf:textfile=ftitle.txt:fontcolor=white:fontsize=110:"
+        "x=(w-text_w)/2:y=170:shadowcolor=black@0.5:shadowy=2:"
         "alpha='min(1,t/0.8)'[vt]")
     parts.append(f"[{na}:a]asplit=2[mus][wvs]")
     parts.append("[wvs]showwaves=s=520x90:colors=0xFFFFFF:rate=30:scale=sqrt[wv]")
-    parts.append("[vt][wv]overlay=(main_w-overlay_w)/2:1620[vc]")
+    parts.append("[vt][wv]overlay=(main_w-overlay_w)/2:1500[vc]")
     parts.append(
-        "[vc]drawtext=fontfile=cfont.ttf:textfile=fcredit.txt:fontcolor=0xDDDDDD:fontsize=30:"
-        "x=(w-text_w)/2:y=1760:borderw=1:bordercolor=black@0.6[v]")
+        "[vc]drawtext=fontfile=cfont.ttf:textfile=fcredit.txt:fontcolor=0xDDDDDD:fontsize=34:"
+        "x=(w-text_w)/2:y=1700:borderw=1:bordercolor=black@0.6[v]")
     parts.append("[mus]volume=1.0[a]")
 
     out = Path(out) if out else OUT / f"fantasy-{day}-{slot or 'main'}.mp4"
